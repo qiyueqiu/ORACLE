@@ -1,0 +1,264 @@
+/**
+ * Router Agent - LLM 驱动的任务路由器
+ * 负责意图解析、候选 Agent 评估、决策
+ */
+
+const { ethers } = require('ethers');
+const { SiliconFlowClient } = require('./siliconflow-client');
+
+class RouterAgent {
+  constructor(apiKey, providerUrl, contractAddresses) {
+    this.llm = new SiliconFlowClient(apiKey);
+    this.provider = new ethers.JsonRpcProvider(providerUrl);
+    this.contracts = {
+      agentDID: new ethers.Contract(
+        contractAddresses.AgentDID,
+        ['function agents(address) view returns (address owner, string did, bytes32 commitment, string qualificationType, bool isActive, uint256 registeredAt)', 'function agentList(uint256) view returns (address)', 'function agentCount() view returns (uint256)'],
+        this.provider
+      ),
+      reputation: new ethers.Contract(
+        contractAddresses.Reputation,
+        ['function getReputation(address agent) view returns (uint256 totalScore, uint256 ratingCount, uint256 averageRating, uint256 lastUpdated)'],
+        this.provider
+      ),
+    };
+    this.executionLog = [];
+  }
+
+  /**
+   * 步骤 1: 意图解析
+   */
+  async parseIntent(taskDescription) {
+    const prompt = `分析任务，返回JSON：{"intent":"意图","requiredQualification":"weather/content/calc","complexity":"simple/medium/complex","priority":"speed/quality/balance"}\n\n任务：${taskDescription}`;
+
+    const stepId = this.generateStepId();
+    const startTime = Date.now();
+
+    try {
+      const result = await this.llm.chatWithJson(
+        'Qwen/Qwen2.5-7B-Instruct',
+        [{ role: 'user', content: prompt }],
+        { intent: '', requiredQualification: '', complexity: '', priority: '' }
+      );
+
+      const logEntry = {
+        stepId,
+        stepType: 'llm_call',
+        agent: 'Router',
+        model: 'Qwen/Qwen2.5-7B-Instruct',
+        phase: 'intent_parsing',
+        input: prompt,
+        output: JSON.stringify(result.data, null, 2),
+        tokens: result.usage.total_tokens,
+        timestamp: Math.floor(startTime / 1000),
+        duration: Date.now() - startTime,
+      };
+
+      this.executionLog.push(logEntry);
+      return result.data;
+    } catch (error) {
+      // Fallback: 从任务文本推断资质类型
+      const task = taskDescription.toLowerCase();
+      let requiredQualification = 'content';
+      if (task.includes('天气') || task.includes('weather') || task.includes('温度') || task.includes('晴') || task.includes('雨')) {
+        requiredQualification = 'weather';
+      } else if (task.includes('计算') || task.includes('calc') || task.includes('数学') || task.includes('数字')) {
+        requiredQualification = 'calc';
+      }
+
+      const logEntry = {
+        stepId,
+        stepType: 'llm_call',
+        agent: 'Router',
+        model: 'Qwen/Qwen2.5-7B-Instruct',
+        phase: 'intent_parsing',
+        input: prompt,
+        output: `Fallback: requiredQualification=${requiredQualification}`,
+        tokens: 0,
+        timestamp: Math.floor(startTime / 1000),
+        duration: Date.now() - startTime,
+      };
+      this.executionLog.push(logEntry);
+
+      return {
+        intent: taskDescription,
+        requiredQualification,
+        complexity: 'simple',
+        priority: 'quality'
+      };
+    }
+  }
+
+  /**
+   * 步骤 2: 获取候选 Agent 列表
+   */
+  async getCandidateAgents(requiredQualification) {
+    const candidates = [];
+    const count = await this.contracts.agentDID.agentCount();
+
+    for (let i = 0; i < Number(count); i++) {
+      const addr = await this.contracts.agentDID.agentList(i);
+      const agent = await this.contracts.agentDID.agents(addr);
+
+      if (!agent[4]) continue; // 跳过未激活
+
+      const rep = await this.contracts.reputation.getReputation(addr);
+      const avgRating = Number(rep[2]) || 0;
+      const ratingCount = Number(rep[1]) || 0;
+
+      candidates.push({
+        address: addr,
+        did: agent[1],
+        qualification: agent[3],
+        avgRating,
+        ratingCount,
+        isActive: agent[4],
+        score: 0,
+      });
+    }
+
+    return candidates;
+  }
+
+  /**
+   * 步骤 3: LLM 评估候选 Agent（带 fallback）
+   */
+  async evaluateCandidates(candidates, intent, requiredQualification) {
+    // 精简候选信息
+    const candidatesSummary = candidates.map((c, i) =>
+      `#${i + 1} ${c.did} | 资质:${c.qualification} | 信誉:${c.avgRating}/5 (${c.ratingCount}评)`
+    ).join('\n');
+
+    const prompt = `任务: ${intent.intent}\n资质要求: ${requiredQualification}\n\nAgent列表:\n${candidatesSummary}\n\n评分(资质匹配60%+信誉40%)，返回JSON: {"rankings":[{"index":0,"score":85,"reason":"..."}],"decision":"选择理由"}`;
+
+    const stepId = this.generateStepId();
+    const startTime = Date.now();
+
+    try {
+      const result = await this.llm.chatWithJson(
+        'Qwen/Qwen2.5-7B-Instruct',
+        [{ role: 'user', content: prompt }],
+        { rankings: [], decision: '' }
+      );
+
+      const logEntry = {
+        stepId,
+        stepType: 'llm_call',
+        agent: 'Router',
+        model: 'Qwen/Qwen2.5-7B-Instruct',
+        phase: 'candidate_evaluation',
+        input: prompt.substring(0, 300) + '...',
+        output: JSON.stringify(result.data, null, 2),
+        tokens: result.usage.total_tokens,
+        timestamp: Math.floor(startTime / 1000),
+        duration: Date.now() - startTime,
+      };
+
+      this.executionLog.push(logEntry);
+
+      // 更新候选分数
+      if (result.data.rankings) {
+        result.data.rankings.forEach(r => {
+          if (candidates[r.index]) {
+            candidates[r.index].score = r.score;
+            candidates[r.index].reason = r.reason;
+          }
+        });
+      }
+
+      return { candidates, decision: result.data.decision || '' };
+    } catch (error) {
+      // Fallback: 规则匹配
+      const logEntry = {
+        stepId,
+        stepType: 'llm_call',
+        agent: 'Router',
+        model: 'Qwen/Qwen2.5-7B-Instruct',
+        phase: 'candidate_evaluation',
+        input: prompt.substring(0, 300) + '...',
+        output: `Fallback to rule-based: ${error.message}`,
+        tokens: 0,
+        timestamp: Math.floor(startTime / 1000),
+        duration: Date.now() - startTime,
+      };
+      this.executionLog.push(logEntry);
+
+      // 规则评分：资质匹配得 60 分基准，信誉 * 8
+      candidates.forEach((c, i) => {
+        const qualMatch = c.qualification === requiredQualification ? 60 : 40;
+        const repScore = c.avgRating * 8;
+        c.score = qualMatch + repScore;
+        c.reason = c.qualification === requiredQualification ? '资质完全匹配' : '资质部分匹配';
+      });
+      candidates.sort((a, b) => b.score - a.score);
+
+      return { candidates, decision: `Fallback: 规则评分最高 ${candidates[0].did} (score=${candidates[0].score})` };
+    }
+  }
+
+  /**
+   * 步骤 4: 做出最终决策
+   */
+  async makeDecision(candidates, decision) {
+    candidates.sort((a, b) => b.score - a.score);
+    const selected = candidates[0];
+
+    const logEntry = {
+      stepId: this.generateStepId(),
+      stepType: 'decision',
+      agent: 'Router',
+      phase: 'final_decision',
+      input: JSON.stringify({ candidateCount: candidates.length }),
+      output: JSON.stringify({
+        selected: selected.did,
+        address: selected.address,
+        score: selected.score,
+        reason: decision,
+      }, null, 2),
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+
+    this.executionLog.push(logEntry);
+
+    return {
+      agent: selected,
+      reason: decision,
+      executionLog: this.executionLog,
+    };
+  }
+
+  /**
+   * 完整路由流程
+   */
+  async route(taskDescription) {
+    this.executionLog = [];
+
+    // 1. 意图解析
+    const intent = await this.parseIntent(taskDescription);
+
+    // 2. 获取候选
+    const candidates = await this.getCandidateAgents(intent.requiredQualification);
+
+    if (candidates.length === 0) {
+      throw new Error('没有可用的候选 Agent');
+    }
+
+    // 3. 评估候选
+    const { candidates: ranked, decision } = await this.evaluateCandidates(
+      candidates,
+      intent,
+      intent.requiredQualification
+    );
+
+    // 4. 最终决策
+    const result = await this.makeDecision(ranked, decision);
+
+    return result;
+  }
+
+  generateStepId() {
+    return `0x${Buffer.from(`${Date.now()}-${Math.random()}`).toString('hex').slice(0, 64)}`;
+  }
+}
+
+module.exports = { RouterAgent };

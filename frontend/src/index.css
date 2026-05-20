@@ -1,0 +1,543 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --bg: #0f0f1a;
+  --card: #1a1a2e;
+  --primary: #6c5ce7;
+  --accent: #a29bfe;
+  --text: #e0e0e0;
+  --text-dim: #888;
+  --success: #00b894;
+  --warning: #fdcb6e;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+#root {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.header h1 {
+  color: var(--primary);
+  font-size: 1.8rem;
+}
+
+.wallet-info {
+  background: var(--card);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  background: var(--card);
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.tab {
+  flex: 1;
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.tab.active {
+  background: var(--primary);
+  color: white;
+}
+
+.page {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+h2 {
+  margin-bottom: 16px;
+  font-size: 1.2rem;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+input, select {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--accent);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-list {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-card {
+  background: var(--bg);
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.agent-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-did {
+  color: var(--accent);
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.agent-meta {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.agent-score {
+  text-align: right;
+}
+
+.score-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.score-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-dim);
+}
+
+.task-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+  margin-bottom: 16px;
+}
+
+.dispatch-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.flow-step.active {
+  border: 1px solid var(--primary);
+  background: rgba(108, 92, 231, 0.1);
+}
+
+.flow-step.done {
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.flow-step.pending {
+  border: 1px solid #333;
+  color: var(--text-dim);
+}
+
+.step-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.flow-step.active .step-dot {
+  background: var(--primary);
+}
+
+.flow-step.done .step-dot {
+  background: var(--success);
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.audit-table th,
+.audit-table td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.audit-table th {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.audit-table tr:hover {
+  background: var(--bg);
+}
+
+.tx-hash {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.tx-hash:hover {
+  text-decoration: underline;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.filter-row input {
+  flex: none;
+  width: 200px;
+}
+
+.error-msg {
+  background: rgba(253, 203, 110, 0.1);
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  padding: 12px;
+  color: var(--warning);
+  margin-bottom: 16px;
+}
+
+/* 候选 Agent 表格 */
+.candidates-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.candidates-table th,
+.candidates-table td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.candidates-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  background: rgba(0,0,0,0.2);
+}
+
+.candidates-table tr:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.candidates-table tr:nth-child(even) {
+  background: rgba(0,0,0,0.1);
+}
+
+/* 增强的调度流程 */
+.dispatch-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  position: relative;
+}
+
+.flow-step.active {
+  border: 1px solid var(--primary);
+  background: rgba(108, 92, 231, 0.1);
+}
+
+.flow-step.done {
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.flow-step.pending {
+  border: 1px solid #333;
+  color: var(--text-dim);
+}
+
+.step-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  border-radius: 50%;
+  font-size: 1rem;
+}
+
+.flow-step.active .step-icon {
+  background: var(--primary);
+}
+
+.flow-step.done .step-icon {
+  background: var(--success);
+}
+
+.step-info {
+  flex: 1;
+}
+
+.step-label {
+  font-weight: 600;
+}
+
+.step-status {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.step-arrow {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  transform: translateX(-50%);
+  color: var(--text-dim);
+  font-size: 1rem;
+}
+
+.flow-step:last-child .step-arrow {
+  display: none;
+}
+
+/* 审计记录卡片 */
+.audit-records {
+  display: grid;
+  gap: 12px;
+}
+
+.audit-record-card {
+  background: var(--bg);
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.audit-record-card:hover {
+  border-color: var(--primary);
+  transform: translateX(4px);
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .candidates-table {
+    font-size: 0.75rem;
+  }
+
+  .candidates-table th,
+  .candidates-table td {
+    padding: 8px 4px;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+
+  .filter-row {
+    flex-direction: column;
+  }
+
+  .filter-row input,
+  .filter-row select {
+    width: 100% !important;
+  }
+}
+
+/* LLM 执行日志 */
+.execution-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.log-entry {
+  background: var(--bg);
+  border: 1px solid #333;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.log-header:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.log-phase {
+  padding: 4px 8px;
+  background: var(--primary);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.log-agent {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.log-model {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.log-tokens {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #8b5cf6;
+}
+
+.log-toggle {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.log-details {
+  padding: 12px 16px;
+  border-top: 1px solid #333;
+  background: rgba(0,0,0,0.2);
+}
+
+.log-section {
+  margin-bottom: 12px;
+}
+
+.log-section:last-child {
+  margin-bottom: 0;
+}
+
+.log-section strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.log-section pre {
+  margin: 0;
+  padding: 8px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}

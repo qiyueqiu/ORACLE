@@ -29,7 +29,7 @@ class RouterAgent {
    * 步骤 1: 意图解析
    */
   async parseIntent(taskDescription) {
-    const prompt = `分析任务，返回JSON：{"intent":"意图","requiredQualification":"weather/content/calc","complexity":"simple/medium/complex","priority":"speed/quality/balance"}\n\n任务：${taskDescription}`;
+    const prompt = `分析任务，返回JSON：{"intent":"意图","requiredQualification":"code_review/data_analysis/translation/research/creative/weather/content/calc","complexity":"simple/medium/complex","priority":"speed/quality/balance"}\n\n可用Agent类型: code_review(代码审查), data_analysis(数据分析), translation(翻译), research(研究), creative(创意写作), weather(天气), content(内容创作), calc(计算)\n\n任务：${taskDescription}`;
 
     const stepId = this.generateStepId();
     const startTime = Date.now();
@@ -58,12 +58,22 @@ class RouterAgent {
       return result.data;
     } catch (error) {
       // Fallback: 从任务文本推断资质类型
-      const task = taskDescription.toLowerCase();
+      const QUALIFICATION_KEYWORDS = {
+        code_review: ['代码', '审查', 'review', 'bug', '安全', '漏洞', 'code', '安全漏洞', '代码质量'],
+        data_analysis: ['数据', '分析', '统计', 'data', '分析报告', '趋势', '图表'],
+        translation: ['翻译', 'translate', '中英', '英中', '多语言'],
+        research: ['研究', '调研', '论文', '文献', 'report', '调查'],
+        creative: ['创作', '写作', '文案', '故事', '诗歌', 'creative', '小说'],
+        weather: ['天气', 'weather', '温度', '晴', '雨', '气候'],
+        calc: ['计算', 'calc', '数学', '数字', '运算'],
+      };
+
       let requiredQualification = 'content';
-      if (task.includes('天气') || task.includes('weather') || task.includes('温度') || task.includes('晴') || task.includes('雨')) {
-        requiredQualification = 'weather';
-      } else if (task.includes('计算') || task.includes('calc') || task.includes('数学') || task.includes('数字')) {
-        requiredQualification = 'calc';
+      for (const [qual, keywords] of Object.entries(QUALIFICATION_KEYWORDS)) {
+        if (keywords.some(kw => taskDescription.includes(kw))) {
+          requiredQualification = qual;
+          break;
+        }
       }
 
       const logEntry = {
@@ -100,7 +110,7 @@ class RouterAgent {
       const addr = await this.contracts.agentDID.agentList(i);
       const agent = await this.contracts.agentDID.agents(addr);
 
-      if (!agent[4]) continue; // 跳过未激活
+      if (!agent[4]) continue;
 
       const rep = await this.contracts.reputation.getReputation(addr);
       const avgRating = Number(rep[2]) || 0;
@@ -117,7 +127,9 @@ class RouterAgent {
       });
     }
 
-    return candidates;
+    // 优先返回匹配资质的 Agent；如果没有匹配的，返回全部
+    const matched = candidates.filter(c => c.qualification === requiredQualification);
+    return matched.length > 0 ? matched : candidates;
   }
 
   /**

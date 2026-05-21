@@ -1,11 +1,19 @@
 import { ethers } from 'ethers';
-
-// 从部署文件读取合约地址
 import addresses from './addresses.json';
 
 export const CONTRACT_ADDRESSES = addresses.contracts;
 
-// ABI fragments
+export const QUALIFICATION_CONFIG: Record<string, { name: string; icon: string; color: string }> = {
+  code_review: { name: '代码审查', icon: '🔍', color: '#3b82f6' },
+  data_analysis: { name: '数据分析', icon: '📊', color: '#10b981' },
+  translation: { name: '翻译服务', icon: '🌐', color: '#f59e0b' },
+  research: { name: '研究分析', icon: '🔬', color: '#6366f1' },
+  creative: { name: '创意写作', icon: '✍️', color: '#ec4899' },
+  weather: { name: '天气服务', icon: '🌤️', color: '#06b6d4' },
+  content: { name: '内容创作', icon: '📝', color: '#8b5cf6' },
+  calc: { name: '计算服务', icon: '🔢', color: '#eab308' },
+};
+
 export const AgentDIDABI = [
   'function registerAgent(string calldata did, bytes32 commitment, string calldata qualificationType) external',
   'function verifyQualification(bytes32 nullifier, bytes32 secretHash, bytes32 commitment) external view returns (bool)',
@@ -35,6 +43,7 @@ export const ReputationABI = [
   'function reputations(address agent) external view returns (uint256 totalScore, uint256 ratingCount, uint256 averageRating, uint256 lastUpdated, bool exists)',
   'function getAverageRating(address agent) external view returns (uint256)',
   'function hasReputation(address agent) external view returns (bool)',
+  'function isReliable(address agent) external view returns (bool)',
   'event ReputationUpdated(address indexed agent, uint256 newAverage, uint256 totalRatings)',
 ];
 

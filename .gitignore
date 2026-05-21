@@ -16,6 +16,7 @@ frontend/src/contracts/addresses.json
 # E2E screenshots
 e2e-screenshot.png
 e2e-error.png
+e2e-screenshots/
 
 # OS
 .DS_Store

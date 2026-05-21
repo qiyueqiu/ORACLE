@@ -13,9 +13,10 @@ contract Reputation {
     mapping(address => AgentReputation) public reputations;
     address[] public agentList;
 
-    uint256 public constant MIN_RATING = 1;
-    uint256 public constant MAX_RATING = 5;
-    uint256 public constant THRESHOLD = 3; // Minimum average to be considered reliable
+    uint256 public constant MIN_RATING = 0;
+    uint256 public constant MAX_RATING = 100;
+    uint256 public constant RELIABLE_THRESHOLD = 60;
+    uint256 public constant HIGHLY_RELIABLE_THRESHOLD = 80;
 
     event ReputationUpdated(
         address indexed agent,
@@ -74,7 +75,7 @@ contract Reputation {
     }
 
     function isReliable(address agent) external view returns (bool) {
-        return reputations[agent].averageRating >= THRESHOLD &&
+        return reputations[agent].averageRating >= RELIABLE_THRESHOLD &&
                reputations[agent].ratingCount >= 3;
     }
 
@@ -88,14 +89,12 @@ contract Reputation {
 
         AgentReputation storage rep = reputations[agent];
 
-        // Apply penalty by reducing total score (minimum 0)
         if (rep.totalScore > penalty) {
             rep.totalScore -= penalty;
         } else {
-            rep.totalScore = 1; // Keep minimum
+            rep.totalScore = 1;
         }
 
-        // Recalculate average
         rep.averageRating = rep.totalScore / rep.ratingCount;
         rep.lastUpdated = block.timestamp;
 
@@ -123,7 +122,6 @@ contract Reputation {
     ) {
         uint256 actualLimit = limit > agentList.length ? agentList.length : limit;
 
-        // Simple sort by average rating
         address[] memory sortedAgents = new address[](agentList.length);
         uint256[] memory sortedScores = new uint256[](agentList.length);
 
@@ -132,7 +130,6 @@ contract Reputation {
             sortedScores[i] = reputations[agentList[i]].averageRating;
         }
 
-        // Bubble sort (simple but sufficient for demo)
         for (uint256 i = 0; i < agentList.length - 1; i++) {
             for (uint256 j = 0; j < agentList.length - i - 1; j++) {
                 if (sortedScores[j] < sortedScores[j + 1]) {

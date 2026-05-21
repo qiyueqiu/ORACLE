@@ -13,10 +13,11 @@ typechain-types/
 # Generated
 frontend/src/contracts/addresses.json
 
-# E2E screenshots
+# E2E / debug screenshots
 e2e-screenshot.png
 e2e-error.png
 e2e-screenshots/
+debug-*.png
 
 # OS
 .DS_Store

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getSigner, getContracts, QUALIFICATION_CONFIG } from '../contracts/abis';
+import { ethers } from 'ethers';
+import { getSigner, getContracts, getRegisterSigner, CONTRACT_ADDRESSES, QUALIFICATION_CONFIG } from '../contracts/abis';
 import { generateDID, generateSecret, generateCommitment, generateNullifier, hashSecret } from '../utils/did';
 
 interface AgentInfo {
@@ -61,7 +62,21 @@ export default function Dashboard() {
     setLoading(true);
     setError('');
     try {
-      const signer = await getSigner();
+      const provider = new ethers.JsonRpcProvider('http://localhost:8545');
+      const readOnlyDID = new ethers.Contract(
+        CONTRACT_ADDRESSES.AgentDID,
+        ['function isRegistered(address) view returns (bool)'],
+        provider,
+      );
+
+      let signerIndex = -1;
+      for (let i = 0; i < 20; i++) {
+        const s = getRegisterSigner(i);
+        if (!(await readOnlyDID.isRegistered(s.address))) { signerIndex = i; break; }
+      }
+      if (signerIndex === -1) { setError('所有预设账户均已注册'); setLoading(false); return; }
+
+      const signer = getRegisterSigner(signerIndex);
       const { agentDID } = getContracts(signer);
       const did = generateDID(didName);
       const secret = generateSecret();
@@ -74,7 +89,7 @@ export default function Dashboard() {
       setShowRegister(false);
       await loadAgents();
     } catch (e: any) {
-      setError('注册失败: ' + e.message);
+      setError('注册失败: ' + (e.reason || e.message));
     } finally {
       setLoading(false);
     }

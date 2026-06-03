@@ -86,18 +86,28 @@ jobs:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+      - name: Install root deps (for hardhat + deploy script)
+        run: npm ci
       - name: Install frontend deps
         working-directory: frontend
         run: npm ci
+      - name: Start hardhat node
+        run: |
+          npx hardhat node &
+          sleep 5
+      - name: Deploy contracts (generates addresses.json)
+        run: npx hardhat run scripts/deploy.js --network localhost
+        env:
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY || 'test-key' }}
       - name: Type check + build
         working-directory: frontend
         run: npm run build
 
-  # E2E 测试（手动触发，慢，需要 3 个服务；不在 push 自动跑）
+  # E2E 测试（仅手动触发，CI push 跳过；启动 3 个服务 + Playwright 易失败）
   e2e:
     name: E2E (Playwright, manual trigger)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

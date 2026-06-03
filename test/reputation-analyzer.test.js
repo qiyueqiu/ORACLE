@@ -1,21 +1,23 @@
 /**
  * ReputationAnalyzerAgent 单元测试
  * 覆盖: analyzeExecutionTrace / calculateTrend / fullAnalysis / submitUserRating / submitRatingOnChain
+ *
+ * 用 axios-mock-adapter 拦截 HTTP 调用
  */
 const { expect } = require("chai");
 const sinon = require("sinon");
+const axios = require("axios");
+const MockAdapter = require("axios-mock-adapter");
 const { ReputationAnalyzerAgent, SCORING_DIMENSIONS } = require("../agents/reputation-analyzer");
-const { SiliconFlowClient } = require("../agents/siliconflow-client");
+
+const SF_URL = "https://api.siliconflow.cn/v1/chat/completions";
 
 describe("agents/reputation-analyzer", function () {
-    let analyzer, chatJsonStub;
+    let analyzer, mock;
     let mockSigner, mockReputation;
 
     beforeEach(function () {
-        chatJsonStub = sinon.stub(SiliconFlowClient.prototype, "chatWithJson");
-        mockSigner = {
-            address: "0xSigner",
-        };
+        mockSigner = { address: "0xSigner" };
         mockReputation = {
             connect: sinon.stub().returnsThis(),
             addRating: sinon.stub().resolves({ wait: () => Promise.resolve({ hash: "0xHash" }) }),
@@ -28,16 +30,19 @@ describe("agents/reputation-analyzer", function () {
         });
         analyzer.contracts.reputation = mockReputation;
         analyzer.signer = mockSigner;
+
+        mock = new MockAdapter(axios);
     });
 
     afterEach(function () {
         sinon.restore();
+        mock.restore();
     });
 
     describe("analyzeExecutionTrace", function () {
         it("Should return LLM-analyzed result on success", async function () {
-            chatJsonStub.resolves({
-                data: {
+            mock.onPost(SF_URL).reply(200, {
+                choices: [{ message: { content: JSON.stringify({
                     dimensions: {
                         accuracy: { score: 28, reason: "good" },
                         completeness: { score: 22, reason: "ok" },
@@ -54,7 +59,7 @@ describe("agents/reputation-analyzer", function () {
                     suggestions: ["y"],
                     shouldPenalty: false,
                     penaltyReason: "",
-                },
+                }) } }],
                 usage: { total_tokens: 50 },
             });
             const r = await analyzer.analyzeExecutionTrace({
@@ -68,11 +73,11 @@ describe("agents/reputation-analyzer", function () {
         });
 
         it("Should fall back to length-based scoring on LLM failure (long content)", async function () {
-            chatJsonStub.rejects(new Error("LLM down"));
+            mock.onPost(SF_URL).networkError();
             const r = await analyzer.analyzeExecutionTrace({
                 task: "test",
                 selectedAgent: { did: "d1", qualification: "code_review" },
-                executionResult: "x".repeat(100),  // 100 chars > 50
+                executionResult: "x".repeat(100),
                 chainOfThought: "",
             });
             expect(r.totalScore).to.equal(60);
@@ -82,7 +87,7 @@ describe("agents/reputation-analyzer", function () {
         });
 
         it("Should fall back to low score for empty result", async function () {
-            chatJsonStub.rejects(new Error("LLM down"));
+            mock.onPost(SF_URL).networkError();
             const r = await analyzer.analyzeExecutionTrace({
                 task: "test",
                 selectedAgent: { did: "d1", qualification: "code_review" },
@@ -95,8 +100,8 @@ describe("agents/reputation-analyzer", function () {
         });
 
         it("Should recompute totalScore from dimensions if LLM-provided total is wrong", async function () {
-            chatJsonStub.resolves({
-                data: {
+            mock.onPost(SF_URL).reply(200, {
+                choices: [{ message: { content: JSON.stringify({
                     dimensions: {
                         accuracy: { score: 30, reason: "" },
                         completeness: { score: 25, reason: "" },
@@ -104,10 +109,10 @@ describe("agents/reputation-analyzer", function () {
                         practicality: { score: 15, reason: "" },
                         clarity: { score: 10, reason: "" },
                     },
-                    totalScore: 999,  // wrong
+                    totalScore: 999,
                     quality: "",
                     taskCompleted: true,
-                },
+                }) } }],
                 usage: { total_tokens: 0 },
             });
             const r = await analyzer.analyzeExecutionTrace({
@@ -115,7 +120,7 @@ describe("agents/reputation-analyzer", function () {
                 selectedAgent: { did: "d", qualification: "x" },
                 executionResult: "long enough content for valid analysis here",
             });
-            expect(r.totalScore).to.equal(100);  // 30+25+20+15+10=100
+            expect(r.totalScore).to.equal(100);
         });
     });
 
@@ -157,8 +162,8 @@ describe("agents/reputation-analyzer", function () {
 
     describe("fullAnalysis", function () {
         it("Should call submitRatingOnChain and skip penalty for high score", async function () {
-            chatJsonStub.resolves({
-                data: {
+            mock.onPost(SF_URL).reply(200, {
+                choices: [{ message: { content: JSON.stringify({
                     dimensions: {
                         accuracy: { score: 30, reason: "" },
                         completeness: { score: 25, reason: "" },
@@ -171,7 +176,7 @@ describe("agents/reputation-analyzer", function () {
                     taskCompleted: true,
                     shouldPenalty: false,
                     penaltyReason: "",
-                },
+                }) } }],
                 usage: { total_tokens: 0 },
             });
             const r = await analyzer.fullAnalysis({
@@ -185,8 +190,8 @@ describe("agents/reputation-analyzer", function () {
         });
 
         it("Should apply penalty for very low score (shouldPenalty=true, score<20)", async function () {
-            chatJsonStub.resolves({
-                data: {
+            mock.onPost(SF_URL).reply(200, {
+                choices: [{ message: { content: JSON.stringify({
                     dimensions: {
                         accuracy: { score: 5, reason: "" },
                         completeness: { score: 5, reason: "" },
@@ -199,7 +204,7 @@ describe("agents/reputation-analyzer", function () {
                     taskCompleted: false,
                     shouldPenalty: true,
                     penaltyReason: "low quality",
-                },
+                }) } }],
                 usage: { total_tokens: 0 },
             });
             const r = await analyzer.fullAnalysis({
@@ -208,8 +213,6 @@ describe("agents/reputation-analyzer", function () {
                 executionResult: "poor",
             });
             expect(r.analysis.shouldPenalty).to.be.true;
-            // score 20 → penalty 10 (10 ≤ score < 20? 实际 score<20=30, 20 不 < 20 → penalty 10)
-            // 实际合约: score < 20 ? 30 : 10; 这里 score=20 → penalty 10
             expect(r.penaltyResult).to.not.be.null;
         });
     });

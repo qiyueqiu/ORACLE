@@ -1,21 +1,25 @@
 /**
  * WorkerAgent / WorkerAgents 单元测试
  * 覆盖: buildPrompt / selectModel / chatWithChainOfThought / execute
+ *
+ * 用 axios-mock-adapter 拦截 HTTP 调用
  */
 const { expect } = require("chai");
-const sinon = require("sinon");
+const axios = require("axios");
+const MockAdapter = require("axios-mock-adapter");
 const { WorkerAgent, QUALIFICATION_CONFIG } = require("../agents/worker-agents");
-const { SiliconFlowClient } = require("../agents/siliconflow-client");
+
+const SF_URL = "https://api.siliconflow.cn/v1/chat/completions";
 
 describe("agents/worker-agents", function () {
-    let chatStub;
+    let mock;
 
     beforeEach(function () {
-        chatStub = sinon.stub(SiliconFlowClient.prototype, "chat");
+        mock = new MockAdapter(axios);
     });
 
     afterEach(function () {
-        chatStub.restore();
+        mock.restore();
     });
 
     describe("selectModel", function () {
@@ -29,7 +33,7 @@ describe("agents/worker-agents", function () {
         it("Should pick complex model for long tasks", function () {
             const info = { did: "test", address: "0x1", qualification: "code_review" };
             const w = new WorkerAgent("k", info);
-            const longTask = "请分析这段非常长的代码".repeat(30);  // > 100 字符 + 含"分析"
+            const longTask = "请分析这段非常长的代码".repeat(30);
             const model = w.selectModel(longTask);
             expect(model).to.equal("deepseek-ai/DeepSeek-V3");
         });
@@ -61,27 +65,25 @@ describe("agents/worker-agents", function () {
 
     describe("chatWithChainOfThought", function () {
         it("Should parse <思考> and <结果> tags", async function () {
-            const info = { did: "test", address: "0x1", qualification: "code_review" };
-            const w = new WorkerAgent("k", info);
-            chatStub.resolves({
-                content: "<思考>让我想想</思考><结果>最终答案</结果>",
+            mock.onPost(SF_URL).reply(200, {
+                choices: [{ message: { content: "<思考>让我想想</思考><结果>最终答案</结果>" } }],
                 usage: { total_tokens: 10 },
                 model: "m",
             });
+            const info = { did: "test", address: "0x1", qualification: "code_review" };
+            const w = new WorkerAgent("k", info);
             const r = await w.chatWithChainOfThought("m", "test");
             expect(r.chainOfThought).to.equal("让我想想");
-            // 注意：worker-agents.js 实际匹配 `</结果>` 的正则代码有 bug
-            // (使用了 </result>)，这里只验证 chainOfThought 解析
         });
 
         it("Should return raw content when no tags", async function () {
-            const info = { did: "test", address: "0x1", qualification: "code_review" };
-            const w = new WorkerAgent("k", info);
-            chatStub.resolves({
-                content: "no tags here",
+            mock.onPost(SF_URL).reply(200, {
+                choices: [{ message: { content: "no tags here" } }],
                 usage: { total_tokens: 5 },
                 model: "m",
             });
+            const info = { did: "test", address: "0x1", qualification: "code_review" };
+            const w = new WorkerAgent("k", info);
             const r = await w.chatWithChainOfThought("m", "test");
             expect(r.chainOfThought).to.equal("");
             expect(r.content).to.equal("no tags here");
@@ -90,13 +92,13 @@ describe("agents/worker-agents", function () {
 
     describe("execute", function () {
         it("Should return result and chainOfThought", async function () {
-            const info = { did: "did:codeReview1", address: "0xAgent1", qualification: "code_review" };
-            const w = new WorkerAgent("k", info);
-            chatStub.resolves({
-                content: "<思考>analyze</思考><结果>completed</结果>",
+            mock.onPost(SF_URL).reply(200, {
+                choices: [{ message: { content: "<思考>analyze</思考><结果>completed</结果>" } }],
                 usage: { total_tokens: 50 },
                 model: "m",
             });
+            const info = { did: "did:codeReview1", address: "0xAgent1", qualification: "code_review" };
+            const w = new WorkerAgent("k", info);
             const r = await w.execute("audit code", { selectedAgent: "did:codeReview1", reputation: 90 });
             expect(r.result).to.equal("completed");
             expect(r.chainOfThought).to.equal("analyze");
@@ -105,14 +107,14 @@ describe("agents/worker-agents", function () {
         });
 
         it("Should propagate LLM errors", async function () {
+            mock.onPost(SF_URL).networkError();
             const info = { did: "x", address: "0x1", qualification: "code_review" };
             const w = new WorkerAgent("k", info);
-            chatStub.rejects(new Error("LLM down"));
             try {
                 await w.execute("x");
                 expect.fail("Should have thrown");
             } catch (e) {
-                expect(e.message).to.include("LLM down");
+                expect(e.message).to.match(/Network Error|SiliconFlow/);
             }
         });
     });

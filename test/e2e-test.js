@@ -14,9 +14,9 @@ const { chromium } = require('@playwright/test');
 const { ethers } = require('ethers');
 
 const CONTRACTS = {
-  AgentDID: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-  AuditLog: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-  Reputation: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+  AgentDID: '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
+  AuditLog: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+  Reputation: '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
 };
 
 const AgentDIDABI = [
@@ -69,7 +69,8 @@ async function main() {
     delete localEnv.HTTPS_PROXY; delete localEnv.https_proxy;
 
     const browser = await chromium.launch({
-        headless: true,
+        headless: false,
+        slowMo: 200,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
@@ -95,12 +96,14 @@ async function main() {
             const agentCount = await agentDID.agentCount();
             if (Number(agentCount) < 1) throw new Error('注册失败，链上无 Agent');
 
-            // 1.2 Dispatch
+            // 1.2 Dispatch（用唯一任务避免 Commitment 重复）
+            const uniqueTask = `审查代码 XSS 漏洞 (${Date.now()})`;
             await page.click('.nav-item:has-text("任务调度")');
             await sleep(1000);
-            await page.fill('.task-input', '帮我审查一段代码的 XSS 漏洞');
+            await page.fill('.task-input', uniqueTask);
             await page.click('button:has-text("开始调度")');
 
+            // 等待结果面板出现（最长 120 秒，含 LLM 调用 + 链上记录）
             await page.locator('.result-panel', { timeout: 120000 }).waitFor().catch(() => {});
             const resultPanel = page.locator('.result-panel');
             if (await resultPanel.count() === 0) throw new Error('未返回结果面板');
@@ -120,10 +123,7 @@ async function main() {
             const page = await context.newPage();
             await page.goto('http://localhost:5173', { waitUntil: 'networkidle' });
             await sleep(1000);
-            await page.click('.nav-item:has-text("信誉")').catch(async () => {
-                // fallback: 不同版本用不同 nav-item 名
-                await page.click('text=信誉分析');
-            });
+            await page.click('.nav-item:has-text("信誉分析")');
             await sleep(3000);
             // 检查页面包含"信誉"字样
             const body = await page.textContent('body');
@@ -166,7 +166,7 @@ async function main() {
             await page.goto('http://localhost:5173', { waitUntil: 'networkidle' });
             await sleep(1000);
             // 切换 4 个 tab
-            for (const tabText of ['任务调度', '审计日志', '智能体管理', '信誉']) {
+            for (const tabText of ['任务调度', '审计日志', '智能体管理', '信誉分析']) {
                 await page.click(`.nav-item:has-text("${tabText}")`).catch(() => {});
                 await sleep(500);
             }

@@ -16,6 +16,7 @@ interface AgentSummary {
 }
 
 const API_BASE = 'http://localhost:3001';
+const API_KEY = 'demo-key-change-me';
 
 const TREND_MAP: Record<string, { label: string; icon: string; cls: string }> = {
   improving: { label: '上升', icon: '📈', cls: 'badge-success' },
@@ -43,7 +44,7 @@ export default function Reputation() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/reputation/summary`);
+      const res = await fetch(`${API_BASE}/api/reputation/summary`, { headers: { 'x-api-key': API_KEY } });
       const data = await res.json();
       setAgents(data.agents || []);
     } catch (e: any) {

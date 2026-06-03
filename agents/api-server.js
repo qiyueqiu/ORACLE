@@ -60,15 +60,11 @@ const CONFIG = {
 const sharedProvider = new ethers.JsonRpcProvider(CONFIG.PROVIDER_URL);
 
 // 路由器：决策后对 decisionDigest 签名
-const routerSigner = new ethers.NonceManager(
-  new ethers.Wallet(CONFIG.ROUTER_SIGNER_PK, sharedProvider)
-);
+const routerSigner = new ethers.Wallet(CONFIG.ROUTER_SIGNER_PK, sharedProvider);
 const routerWalletAddress = routerSigner.address;
 
 // 信誉分析：评分后调用 rateWeighted / applyPenalty
-const reputationSigner = new ethers.NonceManager(
-  new ethers.Wallet(CONFIG.REPUTATION_SIGNER_PK, sharedProvider)
-);
+const reputationSigner = new ethers.Wallet(CONFIG.REPUTATION_SIGNER_PK, sharedProvider);
 
 // Worker 默认签名者（演示用，真实环境由每个 Agent 提供）
 const workerDemoSigner = new ethers.Wallet(CONFIG.WORKER_DEMO_PK, sharedProvider);

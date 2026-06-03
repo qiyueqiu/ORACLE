@@ -25,3 +25,9 @@ Thumbs.db
 
 # Env
 .env
+
+# Deployments（Hardhat ignite / deploy.js 生成的链历史）
+deployments/
+
+# Test agent fixtures（setup-test-agents.js 输出，每次重跑会变）
+test/test-agents.json

@@ -62,6 +62,7 @@ const QUALITY_MAP: Record<string, { label: string; cls: string; color: string }>
 };
 
 const API_BASE = 'http://localhost:3001';
+const API_KEY = 'demo-key-change-me';
 
 export default function Dispatch() {
   const [task, setTask] = useState('');
@@ -151,7 +152,7 @@ export default function Dispatch() {
 
       fetch(`${API_BASE}/api/dispatch/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
         body: JSON.stringify({ task })
       }).then(async response => {
         if (!response.body) { reject(new Error('No response body')); return; }
@@ -289,7 +290,7 @@ export default function Dispatch() {
     try {
       const res = await fetch(`${API_BASE}/api/user-rating`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
         body: JSON.stringify({
           agentAddress: lastAgentAddress,
           score: userRating,

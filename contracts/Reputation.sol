@@ -1,27 +1,47 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract Reputation {
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+/**
+ * @title Reputation (改造 5)
+ * @notice 百分制信誉系统，支持：
+ *   - 评分权重：rater 自身信誉分越高，权重越大（防 Sybil）
+ *   - 时间衰减：e^(-Δt / halfLife)，halfLife 由 owner 设置
+ *   - 评分权限：可由 owner 收紧为白名单
+ *   - 整数平方根（防溢出）
+ *
+ * 向后兼容：保留旧 addRating/getReputation 签名；新增 rateWeighted/timeDecayed/isReliableWeighted。
+ */
+contract Reputation is Ownable {
     struct AgentReputation {
-        uint256 totalScore;
-        uint256 ratingCount;
-        uint256 averageRating;
+        uint256 totalScore;     // 累计评分（加权后）
+        uint256 weightSum;      // 累计权重
+        uint256 ratingCount;    // 评分次数
+        uint256 averageRating;  // 加权平均
         uint256 lastUpdated;
         bool exists;
     }
 
-    mapping(address => AgentReputation) public reputations;
-    address[] public agentList;
-
+    // ===== 配置 =====
     uint256 public constant MIN_RATING = 0;
     uint256 public constant MAX_RATING = 100;
     uint256 public constant RELIABLE_THRESHOLD = 60;
     uint256 public constant HIGHLY_RELIABLE_THRESHOLD = 80;
+    uint256 public constant MIN_RATINGS_FOR_RELIABLE = 3;
+    uint256 public halfLifeSeconds;            // 衰减半衰期（秒）
+    uint256 public minRaterReputation;         // 评分者自身信誉门槛
+    bool public restrictRaters;                // 是否仅白名单可评分
+
+    mapping(address => AgentReputation) public reputations;
+    mapping(address => bool) public authorizedRater;
+    address[] public agentList;
 
     event ReputationUpdated(
         address indexed agent,
         uint256 newAverage,
-        uint256 totalRatings
+        uint256 totalRatings,
+        uint256 appliedWeight
     );
 
     event ReputationPenalty(
@@ -30,31 +50,66 @@ contract Reputation {
         string reason
     );
 
-    function addRating(address agent, uint256 rating) external returns (uint256) {
-        require(rating >= MIN_RATING && rating <= MAX_RATING, "Invalid rating");
-        require(agent != address(0), "Invalid address");
+    event RaterAuthorized(address indexed rater, bool allowed);
+    event ConfigUpdated(uint256 halfLifeSeconds, uint256 minRaterReputation, bool restrictRaters);
 
-        AgentReputation storage rep = reputations[agent];
-
-        if (!rep.exists) {
-            rep.exists = true;
-            rep.totalScore = rating;
-            rep.ratingCount = 1;
-            rep.averageRating = rating;
-            rep.lastUpdated = block.timestamp;
-            agentList.push(agent);
-        } else {
-            rep.totalScore += rating;
-            rep.ratingCount++;
-            rep.averageRating = rep.totalScore / rep.ratingCount;
-            rep.lastUpdated = block.timestamp;
-        }
-
-        emit ReputationUpdated(agent, rep.averageRating, rep.ratingCount);
-
-        return rep.averageRating;
+    constructor() Ownable(msg.sender) {
+        halfLifeSeconds = 30 days;
+        minRaterReputation = 0;
+        restrictRaters = false;
     }
 
+    // ===== 旧版兼容：addRating 任意地址（权重 1，但同样遵守 restrictRaters） =====
+    function addRating(address agent, uint256 rating) external returns (uint256) {
+        if (restrictRaters) {
+            require(authorizedRater[msg.sender], "Not authorized rater");
+        }
+        return _addRatingWeighted(agent, rating, 1);
+    }
+
+    // ===== 新版：rater 带权重评分 =====
+    function rateWeighted(address agent, uint256 rating) external returns (uint256) {
+        if (restrictRaters) {
+            require(authorizedRater[msg.sender], "Not authorized rater");
+        }
+        require(rating >= MIN_RATING && rating <= MAX_RATING, "Invalid rating");
+        require(agent != address(0), "Invalid address");
+        if (minRaterReputation > 0) {
+            require(reputations[msg.sender].averageRating >= minRaterReputation, "Low rater rep");
+        }
+        uint256 raterAvg = reputations[msg.sender].averageRating;
+        uint256 weight = raterAvg == 0 ? 1 : _sqrt(raterAvg);
+        return _addRatingWeighted(agent, rating, weight);
+    }
+
+    function _addRatingWeighted(address agent, uint256 rating, uint256 weight) internal returns (uint256) {
+        require(rating >= MIN_RATING && rating <= MAX_RATING, "Invalid rating");
+        require(agent != address(0), "Invalid address");
+        require(weight > 0, "Zero weight");
+
+        AgentReputation storage rep = reputations[agent];
+        uint256 newAvg;
+        if (!rep.exists) {
+            rep.exists = true;
+            rep.totalScore = rating * weight;
+            rep.weightSum = weight;
+            rep.ratingCount = 1;
+            newAvg = rating;
+            agentList.push(agent);
+        } else {
+            rep.totalScore += rating * weight;
+            rep.weightSum += weight;
+            rep.ratingCount++;
+            newAvg = rep.totalScore / rep.weightSum;
+        }
+        rep.averageRating = newAvg;
+        rep.lastUpdated = block.timestamp;
+
+        emit ReputationUpdated(agent, newAvg, rep.ratingCount, weight);
+        return newAvg;
+    }
+
+    // ===== 读取（兼容旧版） =====
     function getReputation(address agent) external view returns (
         uint256 totalScore,
         uint256 ratingCount,
@@ -62,57 +117,87 @@ contract Reputation {
         uint256 lastUpdated
     ) {
         AgentReputation memory rep = reputations[agent];
-        return (
-            rep.totalScore,
-            rep.ratingCount,
-            rep.averageRating,
-            rep.lastUpdated
-        );
+        return (rep.totalScore, rep.ratingCount, rep.averageRating, rep.lastUpdated);
     }
 
     function getAverageRating(address agent) external view returns (uint256) {
         return reputations[agent].averageRating;
     }
 
-    function isReliable(address agent) external view returns (bool) {
+    function isReliable(address agent) public view returns (bool) {
         return reputations[agent].averageRating >= RELIABLE_THRESHOLD &&
-               reputations[agent].ratingCount >= 3;
+               reputations[agent].ratingCount >= MIN_RATINGS_FOR_RELIABLE;
     }
 
     function meetsThreshold(address agent, uint256 threshold) external view returns (bool) {
         return reputations[agent].averageRating >= threshold;
     }
 
-    function applyPenalty(address agent, uint256 penalty, string calldata reason) external {
+    // ===== 新版：时间衰减后的 effective rating =====
+    function timeDecayed(address agent) public view returns (uint256) {
+        AgentReputation memory rep = reputations[agent];
+        if (rep.ratingCount == 0) return 0;
+        if (halfLifeSeconds == 0) return rep.averageRating;
+        uint256 dt = block.timestamp > rep.lastUpdated ? block.timestamp - rep.lastUpdated : 0;
+        uint256 decay = (dt * 10000) / halfLifeSeconds;
+        if (decay >= 10000) return 0;
+        return (rep.averageRating * (10000 - decay)) / 10000;
+    }
+
+    function isReliableWeighted(address agent) external view returns (bool) {
+        return timeDecayed(agent) >= RELIABLE_THRESHOLD &&
+               reputations[agent].ratingCount >= MIN_RATINGS_FOR_RELIABLE;
+    }
+
+    // ===== Penalty（仅 owner，可防止任意 slash） =====
+    function applyPenalty(address agent, uint256 penalty, string calldata reason) external onlyOwner {
         require(reputations[agent].exists, "Agent not found");
         require(penalty > 0 && penalty <= MAX_RATING, "Invalid penalty");
 
         AgentReputation storage rep = reputations[agent];
-
-        if (rep.totalScore > penalty) {
-            rep.totalScore -= penalty;
+        if (rep.totalScore > penalty * rep.weightSum) {
+            rep.totalScore -= penalty * rep.weightSum;
         } else {
             rep.totalScore = 1;
         }
-
-        rep.averageRating = rep.totalScore / rep.ratingCount;
+        rep.averageRating = rep.weightSum == 0 ? 0 : rep.totalScore / rep.weightSum;
         rep.lastUpdated = block.timestamp;
 
         emit ReputationPenalty(agent, penalty, reason);
     }
 
+    // ===== Owner 治理 =====
+    function setHalfLife(uint256 newHalfLife) external onlyOwner {
+        halfLifeSeconds = newHalfLife;
+        emit ConfigUpdated(newHalfLife, minRaterReputation, restrictRaters);
+    }
+
+    function setMinRaterReputation(uint256 newMin) external onlyOwner {
+        minRaterReputation = newMin;
+        emit ConfigUpdated(halfLifeSeconds, newMin, restrictRaters);
+    }
+
+    function setRestrictRaters(bool restrict) external onlyOwner {
+        restrictRaters = restrict;
+        emit ConfigUpdated(halfLifeSeconds, minRaterReputation, restrict);
+    }
+
+    function setAuthorizedRater(address rater, bool allowed) external onlyOwner {
+        authorizedRater[rater] = allowed;
+        emit RaterAuthorized(rater, allowed);
+    }
+
+    // ===== 批量查询 =====
     function getAllReputations() external view returns (
         address[] memory addresses,
         uint256[] memory averages
     ) {
         addresses = new address[](agentList.length);
         averages = new uint256[](agentList.length);
-
         for (uint256 i = 0; i < agentList.length; i++) {
             addresses[i] = agentList[i];
             averages[i] = reputations[agentList[i]].averageRating;
         }
-
         return (addresses, averages);
     }
 
@@ -121,15 +206,12 @@ contract Reputation {
         uint256[] memory averages
     ) {
         uint256 actualLimit = limit > agentList.length ? agentList.length : limit;
-
         address[] memory sortedAgents = new address[](agentList.length);
         uint256[] memory sortedScores = new uint256[](agentList.length);
-
         for (uint256 i = 0; i < agentList.length; i++) {
             sortedAgents[i] = agentList[i];
             sortedScores[i] = reputations[agentList[i]].averageRating;
         }
-
         for (uint256 i = 0; i < agentList.length - 1; i++) {
             for (uint256 j = 0; j < agentList.length - i - 1; j++) {
                 if (sortedScores[j] < sortedScores[j + 1]) {
@@ -138,15 +220,12 @@ contract Reputation {
                 }
             }
         }
-
         addresses = new address[](actualLimit);
         averages = new uint256[](actualLimit);
-
         for (uint256 i = 0; i < actualLimit; i++) {
             addresses[i] = sortedAgents[i];
             averages[i] = sortedScores[i];
         }
-
         return (addresses, averages);
     }
 
@@ -156,5 +235,17 @@ contract Reputation {
 
     function hasReputation(address agent) external view returns (bool) {
         return reputations[agent].exists;
+    }
+
+    // ===== Helpers =====
+    function _sqrt(uint256 x) internal pure returns (uint256) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        uint256 y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+        return y;
     }
 }

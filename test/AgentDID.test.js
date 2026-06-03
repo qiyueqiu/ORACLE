@@ -23,7 +23,7 @@ describe("AgentDID Contract", function () {
                 agentDID.connect(addr1).registerAgent(did, commitment, qualificationType)
             )
                 .to.emit(agentDID, "AgentRegistered")
-                .withArgs(addr1.address, did, commitment, qualificationType);
+                .withArgs(addr1.address, did, commitment, qualificationType, ethers.ZeroAddress);
 
             const agent = await agentDID.getAgent(addr1.address);
             expect(agent.did).to.equal(did);
@@ -122,6 +122,126 @@ describe("AgentDID Contract", function () {
             await expect(
                 agentDID.verifyAndUseQualification(addr1.address, nullifier, secretHash)
             ).to.be.revertedWith("Nullifier already used");
+        });
+    });
+
+    describe("EIP-712 Qualification Verification (改造 4A)", function () {
+        const TYPES = {
+            Qualification: [
+                { name: "agent", type: "address" },
+                { name: "nullifier", type: "bytes32" },
+                { name: "secretHash", type: "bytes32" },
+                { name: "deadline", type: "uint256" }
+            ]
+        };
+
+        async function domainFor(contract) {
+            return {
+                name: "ASB AgentDID",
+                version: "1",
+                chainId: 31337,
+                verifyingContract: await contract.getAddress()
+            };
+        }
+
+        let agent, workerWallet;
+        beforeEach(async function () {
+            workerWallet = ethers.Wallet.createRandom();
+            await agentDID.connect(addr1).registerAgentWithPubKey(
+                "did:agent:eip712",
+                ethers.keccak256(ethers.toUtf8Bytes("commit")),
+                "code_review",
+                workerWallet.address
+            );
+        });
+
+        it("Should accept valid EIP-712 signature from agent pubKey", async function () {
+            const nullifier = ethers.keccak256(ethers.toUtf8Bytes("n1"));
+            const secretHash = ethers.keccak256(ethers.toUtf8Bytes("secret"));
+            const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const value = { agent: addr1.address, nullifier, secretHash, deadline };
+            const sig = await workerWallet.signTypedData(await domainFor(agentDID), TYPES, value);
+
+            await expect(
+                agentDID.verifyQualificationEIP712(addr1.address, nullifier, secretHash, deadline, sig)
+            ).to.emit(agentDID, "QualificationVerified").withArgs(addr1.address, nullifier, true);
+        });
+
+        it("Should reject signature from non-pubKey", async function () {
+            const nullifier = ethers.keccak256(ethers.toUtf8Bytes("n2"));
+            const secretHash = ethers.keccak256(ethers.toUtf8Bytes("s2"));
+            const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const wrong = ethers.Wallet.createRandom();
+            const sig = await wrong.signTypedData(await domainFor(agentDID), TYPES, { agent: addr1.address, nullifier, secretHash, deadline });
+
+            await expect(
+                agentDID.verifyQualificationEIP712(addr1.address, nullifier, secretHash, deadline, sig)
+            ).to.be.revertedWith("Sig not from agent pubKey");
+        });
+
+        it("Should reject expired signature", async function () {
+            const nullifier = ethers.keccak256(ethers.toUtf8Bytes("n3"));
+            const secretHash = ethers.keccak256(ethers.toUtf8Bytes("s3"));
+            const deadline = 1;  // past
+            const value = { agent: addr1.address, nullifier, secretHash, deadline };
+            const sig = await workerWallet.signTypedData(await domainFor(agentDID), TYPES, value);
+
+            await expect(
+                agentDID.verifyQualificationEIP712(addr1.address, nullifier, secretHash, deadline, sig)
+            ).to.be.revertedWith("Signature expired");
+        });
+
+        it("Should prevent nullifier reuse", async function () {
+            const nullifier = ethers.keccak256(ethers.toUtf8Bytes("n4"));
+            const secretHash = ethers.keccak256(ethers.toUtf8Bytes("s4"));
+            const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const value = { agent: addr1.address, nullifier, secretHash, deadline };
+            const sig = await workerWallet.signTypedData(await domainFor(agentDID), TYPES, value);
+            await agentDID.verifyQualificationEIP712(addr1.address, nullifier, secretHash, deadline, sig);
+            await expect(
+                agentDID.verifyQualificationEIP712(addr1.address, nullifier, secretHash, deadline, sig)
+            ).to.be.revertedWith("Nullifier already used");
+        });
+    });
+
+    describe("PubKey binding (改造 2)", function () {
+        it("Should register with pubKey", async function () {
+            const pubKey = ethers.Wallet.createRandom().address;
+            await agentDID.connect(addr1).registerAgentWithPubKey(
+                "did:agent:pk1",
+                ethers.keccak256(ethers.toUtf8Bytes("commit")),
+                "code_review",
+                pubKey
+            );
+            expect(await agentDID.getPubKey(addr1.address)).to.equal(pubKey);
+        });
+
+        it("Should reject registerAgentWithPubKey with zero pubKey", async function () {
+            await expect(
+                agentDID.connect(addr1).registerAgentWithPubKey(
+                    "did:agent:bad",
+                    ethers.keccak256(ethers.toUtf8Bytes("commit")),
+                    "code_review",
+                    ethers.ZeroAddress
+                )
+            ).to.be.revertedWith("pubKey cannot be zero");
+        });
+
+        it("Should setPubKey after registration", async function () {
+            await agentDID.connect(addr1).registerAgent(
+                "did:agent:nopk",
+                ethers.keccak256(ethers.toUtf8Bytes("commit")),
+                "code_review"
+            );
+            const newPk = ethers.Wallet.createRandom().address;
+            await agentDID.connect(addr1).setPubKey(newPk);
+            expect(await agentDID.getPubKey(addr1.address)).to.equal(newPk);
+        });
+
+        it("Should reject setPubKey from non-registered agent", async function () {
+            await expect(
+                agentDID.connect(addr1).setPubKey(ethers.Wallet.createRandom().address)
+            ).to.be.revertedWith("Not registered");
         });
     });
 

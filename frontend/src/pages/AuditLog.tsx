@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getSigner, getContracts } from '../contracts/abis';
+import { ethers } from 'ethers';
+import { getProvider, CONTRACT_ADDRESSES } from '../contracts/abis';
 
 interface AuditRecord {
   id: number;
@@ -21,6 +22,12 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
   '3': { label: '超时', cls: 'badge-accent' },
 };
 
+const AUDITLOG_ABI = [
+  'function getAllRecords() view returns (uint256[] memory)',
+  'function getRecord(uint256 recordId) view returns (uint256 id, uint256 timestamp, address requester, address targetAgent, bytes32 taskCommitment, uint8 decisionReason, uint8 executionStatus, string memory executionResult, uint256 reputationRating, bytes32 transactionHash)',
+  'function getRecordFull(uint256 recordId) view returns (uint256 id, uint256 timestamp, address requester, address targetAgent, bytes32 taskCommitment, uint8 decisionReason, uint8 executionStatus, string memory executionResult, uint256 reputationRating, address routerSigner, bytes32 decisionDigest, address workerSigner)',
+];
+
 export default function AuditLog() {
   const [records, setRecords] = useState<AuditRecord[]>([]);
   const [filteredRecords, setFilteredRecords] = useState<AuditRecord[]>([]);
@@ -35,8 +42,9 @@ export default function AuditLog() {
     setLoading(true);
     setError('');
     try {
-      const signer = await getSigner();
-      const { auditLog } = getContracts(signer);
+      // 只读：直接用 provider，无需 signer
+      const provider = getProvider();
+      const auditLog = new ethers.Contract(CONTRACT_ADDRESSES.AuditLog, AUDITLOG_ABI, provider);
       const allIds = await auditLog.getAllRecords();
       const list: AuditRecord[] = [];
 

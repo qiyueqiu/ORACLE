@@ -4,6 +4,20 @@ const { ethers } = require("hardhat");
 describe("AuditLog Contract", function () {
     let auditLog;
     let owner, requester, agent;
+    const EIP712_DOMAIN = (verifyingContract) => ({
+        name: "ASB AuditLog",
+        version: "1",
+        chainId: 31337,
+        verifyingContract
+    });
+    const ROUTER_TYPES = {
+        Decision: [
+            { name: "taskHash", type: "bytes32" },
+            { name: "rankedAgents", type: "bytes32" },
+            { name: "topAgent", type: "address" },
+            { name: "timestamp", type: "uint256" }
+        ]
+    };
 
     beforeEach(async function () {
         [owner, requester, agent] = await ethers.getSigners();
@@ -13,22 +27,16 @@ describe("AuditLog Contract", function () {
         await auditLog.waitForDeployment();
     });
 
-    describe("Schedule Logging", function () {
+    describe("Schedule Logging (legacy)", function () {
         it("Should log a schedule decision", async function () {
             const taskDescription = "Process data batch #123";
-
             const tx = await auditLog.logSchedule(
-                requester.address,
-                agent.address,
-                taskDescription,
-                0 // QUALIFIED
+                requester.address, agent.address, taskDescription, 0
             );
-
             const receipt = await tx.wait();
             const logEvent = receipt.logs.find(
                 log => auditLog.interface.parseLog(log)?.name === "ScheduleLogged"
             );
-
             expect(logEvent).to.exist;
             const parsed = auditLog.interface.parseLog(logEvent);
             expect(parsed.args.requester).to.equal(requester.address);
@@ -37,26 +45,87 @@ describe("AuditLog Contract", function () {
 
         it("Should increment record count", async function () {
             expect(await auditLog.recordCount()).to.equal(0);
-
             await auditLog.logSchedule(requester.address, agent.address, "Task1", 0);
             expect(await auditLog.recordCount()).to.equal(1);
-
             await auditLog.logSchedule(requester.address, agent.address, "Task2", 0);
             expect(await auditLog.recordCount()).to.equal(2);
         });
 
         it("Should generate sequential record IDs", async function () {
             const tx1 = await auditLog.logSchedule(requester.address, agent.address, "Task1", 0);
-            const receipt1 = await tx1.wait();
-            const event1 = auditLog.interface.parseLog(receipt1.logs[0]);
-            const recordId1 = event1.args[0];
-
+            const r1 = await tx1.wait();
+            const id1 = auditLog.interface.parseLog(r1.logs[0]).args[0];
             const tx2 = await auditLog.logSchedule(requester.address, agent.address, "Task2", 0);
-            const receipt2 = await tx2.wait();
-            const event2 = auditLog.interface.parseLog(receipt2.logs[0]);
-            const recordId2 = event2.args[0];
+            const r2 = await tx2.wait();
+            const id2 = auditLog.interface.parseLog(r2.logs[0]).args[0];
+            expect(id2).to.equal(id1 + 1n);
+        });
+    });
 
-            expect(recordId2).to.equal(recordId1 + 1n);
+    describe("Schedule Logging with Router signature (改造 1)", function () {
+        let routerWallet;
+        let decisionDigest;
+        let decisionSig;
+
+        beforeEach(async function () {
+            routerWallet = ethers.Wallet.createRandom().connect(ethers.provider);
+            await owner.sendTransaction({ to: routerWallet.address, value: ethers.parseEther("1") });
+            const value = {
+                taskHash: ethers.keccak256(ethers.toUtf8Bytes("task1")),
+                rankedAgents: ethers.keccak256(ethers.toUtf8Bytes("rank1")),
+                topAgent: agent.address,
+                timestamp: 1700000000
+            };
+            // 关键：digest = EIP-712 typed-data hash（合约端 ECDSA.recover 也是用这个 hash）
+            decisionDigest = ethers.TypedDataEncoder.hash(
+                EIP712_DOMAIN(await auditLog.getAddress()),
+                ROUTER_TYPES,
+                value
+            );
+            decisionSig = await routerWallet.signTypedData(
+                EIP712_DOMAIN(await auditLog.getAddress()),
+                ROUTER_TYPES,
+                value
+            );
+        });
+
+        it("Should accept valid router signature", async function () {
+            const taskCommitment = ethers.keccak256(ethers.toUtf8Bytes("task1:salt"));
+            const tx = await auditLog.logScheduleWithDecision(
+                requester.address, agent.address, taskCommitment, 0,
+                routerWallet.address, decisionDigest, decisionSig
+            );
+            const r = await tx.wait();
+            expect(r.status).to.equal(1);
+            // 读取完整记录验证 routerSigner
+            const rec = await auditLog.getRecordFull(1);
+            expect(rec.routerSigner).to.equal(routerWallet.address);
+            expect(rec.decisionDigest).to.equal(decisionDigest);
+        });
+
+        it("Should reject invalid router signature", async function () {
+            const fakeWallet = ethers.Wallet.createRandom();
+            const taskCommitment = ethers.keccak256(ethers.toUtf8Bytes("task2:salt"));
+            await expect(
+                auditLog.logScheduleWithDecision(
+                    requester.address, agent.address, taskCommitment, 0,
+                    fakeWallet.address, decisionDigest, decisionSig
+                )
+            ).to.be.revertedWith("Bad router sig");
+        });
+
+        it("Should reject commitment reuse", async function () {
+            const taskCommitment = ethers.keccak256(ethers.toUtf8Bytes("task3:salt"));
+            await auditLog.logScheduleWithDecision(
+                requester.address, agent.address, taskCommitment, 0,
+                routerWallet.address, decisionDigest, decisionSig
+            );
+            await expect(
+                auditLog.logScheduleWithDecision(
+                    requester.address, agent.address, taskCommitment, 0,
+                    routerWallet.address, decisionDigest, decisionSig
+                )
+            ).to.be.revertedWith("Commitment reused");
         });
     });
 
@@ -75,18 +144,87 @@ describe("AuditLog Contract", function () {
                 auditLog.updateExecution(recordId, 1, "Task completed successfully")
             )
                 .to.emit(auditLog, "ExecutionUpdated")
-                .withArgs(recordId, 1, "Task completed successfully");
+                .withArgs(recordId, 1, "Task completed successfully", ethers.ZeroAddress);
 
             const record = await auditLog.getRecord(recordId);
-            expect(record.executionStatus).to.equal(1); // SUCCESS
+            expect(record.executionStatus).to.equal(1);
             expect(record.executionResult).to.equal("Task completed successfully");
         });
 
         it("Should update execution status to failed", async function () {
             await auditLog.updateExecution(recordId, 2, "Task failed: timeout");
-
             const record = await auditLog.getRecord(recordId);
-            expect(record.executionStatus).to.equal(2); // FAILED
+            expect(record.executionStatus).to.equal(2);
+        });
+    });
+
+    describe("Execution Updates with Worker signature (改造 2)", function () {
+        let recordId, workerWallet, did;
+
+        beforeEach(async function () {
+            const AgentDID = await ethers.getContractFactory("AgentDID");
+            did = await AgentDID.deploy();
+            await did.waitForDeployment();
+            await auditLog.setAgentDID(await did.getAddress());
+
+            // 让 agent.address 作为 targetAgent 在 AgentDID 上注册
+            workerWallet = ethers.Wallet.createRandom();
+            // 给 agent 一些 ETH 以发送 tx（agent 是 hardhat 内置 signer 本来就有）
+            await did.connect(agent).registerAgentWithPubKey(
+                "did:worker:1",
+                ethers.keccak256(ethers.toUtf8Bytes("commitment")),
+                "code_review",
+                workerWallet.address
+            );
+
+            const tx = await auditLog.logSchedule(requester.address, agent.address, "Test task", 0);
+            const receipt = await tx.wait();
+            recordId = auditLog.interface.parseLog(receipt.logs[0]).args[0];
+        });
+
+        it("Should reject signature from non-pubKey", async function () {
+            const wrong = ethers.Wallet.createRandom();
+            const result = "ok";
+            const ts = 1700000000;
+            const value = { recordId, result, timestamp: ts };
+            const resultDigest = ethers.TypedDataEncoder.hash(
+                { name: "ASB AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() },
+                { Result: [
+                    { name: "recordId", type: "uint256" },
+                    { name: "result", type: "string" },
+                    { name: "timestamp", type: "uint256" }
+                ]},
+                value
+            );
+            const sig = await wrong.signTypedData(
+                { name: "ASB AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() },
+                { Result: [
+                    { name: "recordId", type: "uint256" },
+                    { name: "result", type: "string" },
+                    { name: "timestamp", type: "uint256" }
+                ]},
+                value
+            );
+            await expect(
+                auditLog.updateExecutionWithSig(recordId, 1, result, resultDigest, sig)
+            ).to.be.revertedWith("Sig not from worker pubKey");
+        });
+
+        it("Should accept signature from correct worker pubKey", async function () {
+            const result = "completed";
+            const ts = 1700000000;
+            const value = { recordId, result, timestamp: ts };
+            const domain = { name: "ASB AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() };
+            const types = { Result: [
+                { name: "recordId", type: "uint256" },
+                { name: "result", type: "string" },
+                { name: "timestamp", type: "uint256" }
+            ]};
+            const resultDigest = ethers.TypedDataEncoder.hash(domain, types, value);
+            const sig = await workerWallet.signTypedData(domain, types, value);
+            await expect(
+                auditLog.updateExecutionWithSig(recordId, 1, result, resultDigest, sig)
+            ).to.emit(auditLog, "ExecutionUpdated").withArgs(recordId, 1, result, workerWallet.address);
         });
     });
 
@@ -104,7 +242,6 @@ describe("AuditLog Contract", function () {
             await expect(auditLog.connect(requester).submitRating(recordId, 5))
                 .to.emit(auditLog, "RatingSubmitted")
                 .withArgs(recordId, 5);
-
             const record = await auditLog.getRecord(recordId);
             expect(record.reputationRating).to.equal(5);
         });
@@ -113,7 +250,6 @@ describe("AuditLog Contract", function () {
             await expect(
                 auditLog.connect(requester).submitRating(recordId, 0)
             ).to.be.revertedWith("Rating must be 1-5");
-
             await expect(
                 auditLog.connect(requester).submitRating(recordId, 6)
             ).to.be.revertedWith("Rating must be 1-5");
@@ -127,7 +263,6 @@ describe("AuditLog Contract", function () {
 
         it("Should prevent duplicate ratings", async function () {
             await auditLog.connect(requester).submitRating(recordId, 4);
-
             await expect(
                 auditLog.connect(requester).submitRating(recordId, 5)
             ).to.be.revertedWith("Already rated");
@@ -158,10 +293,7 @@ describe("AuditLog Contract", function () {
 
         it("Should query by time range", async function () {
             const currentTime = await ethers.provider.getBlock("latest");
-            const startTime = currentTime.timestamp - 1000;
-            const endTime = currentTime.timestamp + 1000;
-
-            const records = await auditLog.getRecordsByTimeRange(startTime, endTime);
+            const records = await auditLog.getRecordsByTimeRange(currentTime.timestamp - 1000, currentTime.timestamp + 1000);
             expect(records.length).to.be.greaterThan(0);
         });
     });

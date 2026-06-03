@@ -5,22 +5,15 @@
 
 const { ethers } = require('ethers');
 const { SiliconFlowClient } = require('./siliconflow-client');
+const { AgentDIDABI, ReputationABI } = require('../shared/abis');
 
 class RouterAgent {
   constructor(apiKey, providerUrl, contractAddresses) {
     this.llm = new SiliconFlowClient(apiKey);
     this.provider = new ethers.JsonRpcProvider(providerUrl);
     this.contracts = {
-      agentDID: new ethers.Contract(
-        contractAddresses.AgentDID,
-        ['function agents(address) view returns (address owner, string did, bytes32 commitment, string qualificationType, bool isActive, uint256 registeredAt)', 'function agentList(uint256) view returns (address)', 'function agentCount() view returns (uint256)'],
-        this.provider
-      ),
-      reputation: new ethers.Contract(
-        contractAddresses.Reputation,
-        ['function getReputation(address agent) view returns (uint256 totalScore, uint256 ratingCount, uint256 averageRating, uint256 lastUpdated)'],
-        this.provider
-      ),
+      agentDID: new ethers.Contract(contractAddresses.AgentDID, AgentDIDABI, this.provider),
+      reputation: new ethers.Contract(contractAddresses.Reputation, ReputationABI, this.provider),
     };
     this.executionLog = [];
   }

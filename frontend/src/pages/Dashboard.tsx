@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { getSigner, getContracts, getRegisterSigner, CONTRACT_ADDRESSES, QUALIFICATION_CONFIG } from '../contracts/abis';
+import {
+  getProvider,
+  getContracts,
+  connectWallet,
+  getCurrentSigner,
+  getWalletState,
+  onWalletChange,
+  hasInjectedProvider,
+  CONTRACT_ADDRESSES,
+  QUALIFICATION_CONFIG,
+} from '../contracts/abis';
 import { generateDID, generateSecret, generateCommitment, generateNullifier, hashSecret } from '../utils/did';
 
 interface AgentInfo {
@@ -24,17 +34,29 @@ export default function Dashboard() {
   const [qualType, setQualType] = useState('code_review');
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
   const [showRegister, setShowRegister] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
   const loadAgents = async () => {
     try {
-      const signer = await getSigner();
-      const { agentDID, reputation } = getContracts(signer);
-      const count = await agentDID.agentCount();
+      // 仅读：用 provider（无 signer）即可
+      const provider = getProvider();
+      const readOnlyDID = new ethers.Contract(
+        CONTRACT_ADDRESSES.AgentDID,
+        ['function agentCount() view returns (uint256)', 'function agentList(uint256) view returns (address)', 'function agents(address) view returns (address owner, string did, bytes32 commitment, string qualificationType, bool isActive, uint256 registeredAt, address pubKey)'],
+        provider,
+      );
+      const reputation = new ethers.Contract(
+        CONTRACT_ADDRESSES.Reputation,
+        ['function getReputation(address agent) view returns (uint256 totalScore, uint256 ratingCount, uint256 averageRating, uint256 lastUpdated)'],
+        provider,
+      );
+      const count = await readOnlyDID.agentCount();
       const list: AgentInfo[] = [];
 
       for (let i = 0; i < Number(count); i++) {
-        const addr = await agentDID.agentList(i);
-        const agent = await agentDID.agents(addr);
+        const addr = await readOnlyDID.agentList(i);
+        const agent = await readOnlyDID.agents(addr);
         const rep = await reputation.getReputation(addr);
         const avgRep = Number(rep[1]) > 0 ? Number(rep[0]) / Number(rep[1]) : 0;
 
@@ -55,35 +77,46 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => { loadAgents(); }, []);
+  useEffect(() => {
+    loadAgents();
+    const off = onWalletChange(s => setWalletAddress(s?.address || null));
+    setWalletAddress(getWalletState()?.address || null);
+    return off;
+  }, []);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    setError('');
+    try {
+      if (!hasInjectedProvider()) {
+        throw new Error('未检测到 MetaMask，请先安装浏览器钱包扩展');
+      }
+      const state = await connectWallet();
+      setWalletAddress(state.address);
+    } catch (e: any) {
+      setError('连接钱包失败: ' + (e.reason || e.message));
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   const handleRegister = async () => {
     if (!didName.trim()) { setError('请输入 Agent 名称'); return; }
+    if (!walletAddress) { setError('请先连接 MetaMask 钱包'); return; }
     setLoading(true);
     setError('');
     try {
-      const provider = new ethers.JsonRpcProvider('http://localhost:8545');
-      const readOnlyDID = new ethers.Contract(
-        CONTRACT_ADDRESSES.AgentDID,
-        ['function isRegistered(address) view returns (bool)'],
-        provider,
-      );
-
-      let signerIndex = -1;
-      for (let i = 0; i < 20; i++) {
-        const s = getRegisterSigner(i);
-        if (!(await readOnlyDID.isRegistered(s.address))) { signerIndex = i; break; }
-      }
-      if (signerIndex === -1) { setError('所有预设账户均已注册'); setLoading(false); return; }
-
-      const signer = getRegisterSigner(signerIndex);
+      const signer = getCurrentSigner();
+      if (!signer) throw new Error('钱包未连接');
       const { agentDID } = getContracts(signer);
+
       const did = generateDID(didName);
       const secret = generateSecret();
       const nullifier = generateNullifier(did, secret);
       const secretHash = hashSecret(secret);
       const commitment = generateCommitment(nullifier, secretHash);
-      const tx = await agentDID.registerAgent(did, commitment, qualType);
+      // 用当前钱包地址作为 pubKey（演示环境 MetaMask 账户是 owner 也是 worker）
+      const tx = await agentDID.registerAgentWithPubKey(did, commitment, qualType, walletAddress);
       await tx.wait();
       setDidName('');
       setShowRegister(false);
@@ -122,9 +155,22 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <h2>智能体管理</h2>
-        <p>注册和管理区块链上的 AI 智能体</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h2>智能体管理</h2>
+          <p>注册和管理区块链上的 AI 智能体</p>
+        </div>
+        <div>
+          {walletAddress ? (
+            <div className="wallet-info">
+              🟢 已连接: {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
+            </div>
+          ) : (
+            <button className="btn-primary" onClick={handleConnect} disabled={connecting}>
+              {connecting ? '连接中…' : '🦊 连接 MetaMask'}
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <div className="error-msg">{error}</div>}

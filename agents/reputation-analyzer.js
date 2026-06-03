@@ -18,8 +18,7 @@
 
 const { ethers } = require('ethers');
 const { SiliconFlowClient } = require('./siliconflow-client');
-
-const SIGNER_PRIVATE_KEY = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a';
+const { AgentDIDABI, AuditLogABI, ReputationABI } = require('../shared/abis');
 
 const SCORING_DIMENSIONS = [
   { key: 'accuracy', name: '准确性', maxScore: 30, desc: '结果是否正确回答了任务的核心问题' },
@@ -34,39 +33,17 @@ class ReputationAnalyzerAgent {
     this.llm = new SiliconFlowClient(apiKey);
     this.provider = new ethers.JsonRpcProvider(providerUrl);
     this.contracts = {
-      agentDID: new ethers.Contract(
-        contractAddresses.AgentDID,
-        [
-          'function agents(address) view returns (address owner, string did, bytes32 commitment, string qualificationType, bool isActive, uint256 registeredAt)',
-          'function agentList(uint256) view returns (address)',
-          'function agentCount() view returns (uint256)',
-        ],
-        this.provider
-      ),
-      auditLog: new ethers.Contract(
-        contractAddresses.AuditLog,
-        [
-          'function getRecord(uint256) view returns (uint256 id, uint256 timestamp, address requester, address targetAgent, string taskDescription, uint8 decisionReason, uint8 executionStatus, string executionResult, uint256 reputationRating, bytes32 transactionHash)',
-          'function getRecordsByAgent(address) view returns (uint256[])',
-          'function getAllRecords() view returns (uint256[])',
-          'function recordCount() view returns (uint256)',
-        ],
-        this.provider
-      ),
-      reputation: new ethers.Contract(
-        contractAddresses.Reputation,
-        [
-          'function getReputation(address) view returns (uint256 totalScore, uint256 ratingCount, uint256 averageRating, uint256 lastUpdated)',
-          'function addRating(address, uint256) external returns (uint256)',
-          'function applyPenalty(address, uint256, string) external',
-          'function getAverageRating(address) view returns (uint256)',
-          'function isReliable(address) view returns (bool)',
-        ],
-        this.provider
-      ),
+      agentDID: new ethers.Contract(contractAddresses.AgentDID, AgentDIDABI, this.provider),
+      auditLog: new ethers.Contract(contractAddresses.AuditLog, AuditLogABI, this.provider),
+      reputation: new ethers.Contract(contractAddresses.Reputation, ReputationABI, this.provider),
     };
-    this.signer = new ethers.NonceManager(new ethers.Wallet(SIGNER_PRIVATE_KEY, this.provider));
+    // 签名者由调用方注入（避免此处硬编码私钥）
+    this.signer = null;
     this.analysisHistory = [];
+  }
+
+  setSigner(wallet) {
+    this.signer = new ethers.NonceManager(wallet);
   }
 
   async analyzeExecutionTrace(taskResult) {

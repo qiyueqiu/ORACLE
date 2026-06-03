@@ -74,10 +74,93 @@ const ReputationABI = [
   'event ConfigUpdated(uint256 halfLifeSeconds, uint256 minRaterReputation, bool restrictRaters)',
 ];
 
+// ===== MockERC20 ABI =====
+const MockERC20ABI = [
+  'function mint(address to, uint256 amount) external',
+  'function approve(address spender, uint256 amount) external returns (bool)',
+  'function transfer(address to, uint256 amount) external returns (bool)',
+  'function transferFrom(address from, address to, uint256 amount) external returns (bool)',
+  'function balanceOf(address account) external view returns (uint256)',
+  'function totalSupply() external view returns (uint256)',
+];
+
+// ===== AgentStake ABI =====
+const AgentStakeABI = [
+  'function stake(uint256 amount) external returns (uint256)',
+  'function unstake(uint256 amount) external',
+  'function slash(address agent, string calldata reason) external returns (uint256)',
+  'function getStake(address agent) external view returns (uint256)',
+  'function isStaked(address agent) external view returns (bool)',
+  'function minStake() external view returns (uint256)',
+  'function slashBps() external view returns (uint256)',
+  'function setAuditLog(address _auditLog) external',
+  'function setMinStake(uint256 newMin) external',
+  'function setSlashBps(uint256 newBps) external',
+  'event Staked(address indexed agent, uint256 amount, uint256 newBalance)',
+  'event Unstaked(address indexed agent, uint256 amount)',
+  'event Slashed(address indexed agent, uint256 amount, string reason)',
+];
+
+// ===== PaymentEscrow ABI =====
+const PaymentEscrowABI = [
+  'function fundTask(uint256 recordId, address worker, uint256 deadline, uint256 amount) external',
+  'function release(uint256 recordId) external',
+  'function refund(uint256 recordId) external',
+  'function getEscrow(uint256 recordId) external view returns (tuple(address payer, address worker, uint256 amount, uint256 deadline, uint8 status))',
+  'function setAuditLog(address _auditLog) external',
+  'function setFeeBps(uint256 newBps) external',
+  'function feeBps() external view returns (uint256)',
+  'event TaskFunded(uint256 indexed recordId, address indexed payer, address indexed worker, uint256 amount)',
+  'event TaskReleased(uint256 indexed recordId, address indexed worker, uint256 amount, uint256 fee)',
+  'event TaskRefunded(uint256 indexed recordId, address indexed payer, uint256 amount)',
+];
+
+// ===== RouterRegistry ABI =====
+const RouterRegistryABI = [
+  'function registerRouter(address pubKey, uint256 stakeAmount) external',
+  'function deactivateRouter(address pubKey) external',
+  'function reactivateRouter(address pubKey) external',
+  'function submitVote(uint256 recordId, bytes32 decisionDigest) external',
+  'function isActiveRouter(address pubKey) external view returns (bool)',
+  'function activeRouterCount() external view returns (uint256)',
+  'function quorumBps() external view returns (uint256)',
+  'function getVotes(uint256 recordId, bytes32 decisionDigest) external view returns (uint256)',
+  'function setQuorumBps(uint256 newQuorum) external',
+  'event RouterRegistered(address indexed pubKey, uint256 stake)',
+  'event RouterDeactivated(address indexed pubKey)',
+  'event VoteSubmitted(uint256 indexed recordId, bytes32 decisionDigest, address indexed voter, uint256 newVotes, uint256 quorum)',
+  'event ConsensusReached(uint256 indexed recordId, bytes32 decisionDigest, uint256 votes)',
+];
+
+// ===== ASBGovernor ABI =====
+const ASBGovernorABI = [
+  'function propose(address target, bytes calldata data, string calldata description) external returns (uint256)',
+  'function castVote(uint256 proposalId, bool support) external',
+  'function queue(uint256 proposalId) external',
+  'function execute(uint256 proposalId) external',
+  'function cancel(uint256 proposalId) external',
+  'function state(uint256 proposalId) external view returns (uint8)',
+  'function proposals(uint256 proposalId) external view returns (uint256 id, address proposer, address target, bytes memory data, string memory description, uint256 forVotes, uint256 againstVotes, uint256 createdAt, uint256 eta, bool executed, bool canceled)',
+  'function proposalCount() external view returns (uint256)',
+  'function setQuorumBps(uint256 v) external',
+  'function setVotingPeriod(uint256 v) external',
+  'function setTimelockDelay(uint256 v) external',
+];
+
 const ALL_ABIS = {
   AgentDID: AgentDIDABI,
   AuditLog: AuditLogABI,
   Reputation: ReputationABI,
+  MockERC20: MockERC20ABI,
+  AgentStake: AgentStakeABI,
+  PaymentEscrow: PaymentEscrowABI,
+  RouterRegistry: RouterRegistryABI,
+  ASBGovernor: ASBGovernorABI,
 };
 
-module.exports = { AgentDIDABI, AuditLogABI, ReputationABI, ALL_ABIS };
+module.exports = {
+  AgentDIDABI, AuditLogABI, ReputationABI,
+  MockERC20ABI, AgentStakeABI, PaymentEscrowABI,
+  RouterRegistryABI, ASBGovernorABI,
+  ALL_ABIS,
+};

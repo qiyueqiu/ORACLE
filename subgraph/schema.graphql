@@ -1,0 +1,45 @@
+# ASB Subgraph Schema
+
+type Agent @entity {
+  id: ID!                        # address
+  did: String!
+  qualificationType: String!
+  registeredAt: BigInt!
+  pubKey: Bytes
+  isActive: Boolean!
+  totalSchedules: Int!
+  totalRatings: BigInt!
+  reputationScore: BigInt
+}
+
+type ScheduleRecord @entity {
+  id: ID!                        # recordId
+  timestamp: BigInt!
+  requester: Bytes!              # address
+  targetAgent: Agent!
+  taskCommitment: Bytes!         # bytes32
+  decisionReason: Int!
+  executionStatus: Int!
+  executionResult: String
+  resultDigest: Bytes
+  reputationRating: Int
+  routerSigner: Bytes
+  decisionDigest: Bytes
+  workerSigner: Bytes
+  transactionHash: Bytes
+}
+
+type RouterDecision @entity {
+  id: ID!                        # recordId
+  record: ScheduleRecord!
+  routerSigner: Bytes!
+  decisionDigest: Bytes!
+  timestamp: BigInt!
+}
+
+type Rating @entity {
+  id: ID!                        # recordId
+  record: ScheduleRecord!
+  rating: Int!
+  timestamp: BigInt!
+}

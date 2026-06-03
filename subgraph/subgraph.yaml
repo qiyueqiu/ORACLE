@@ -1,0 +1,68 @@
+# ASB Subgraph (M2 改造 10)
+# The Graph 子图骨架
+#
+# 部署步骤：
+#   1. cd subgraph && npm install
+#   2. 部署到 The Graph Studio / Subgraph Studio 或本地 graph-node
+#   3. 更新 frontend/src/pages/AuditLog.tsx 用 Apollo Client 替代直接合约调用
+#
+# 网络：localhost hardhat (chainId 31337)
+# 数据源：AuditLog + Reputation
+# 事件映射：ScheduleLogged / ExecutionUpdated / RatingSubmitted / ReputationUpdated / RouterDecisionLogged
+
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: AuditLog
+    network: hardhat
+    source:
+      address: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"  # 占位；deploy 后替换
+      abi: AuditLog
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - ScheduleRecord
+        - Agent
+        - RouterDecision
+      abis:
+        - name: AuditLog
+          file: ./abis/AuditLog.json
+        - name: AgentDID
+          file: ./abis/AgentDID.json
+        - name: Reputation
+          file: ./abis/Reputation.json
+      eventHandlers:
+        - event: ScheduleLogged(uint256,address,address,uint8,bytes32)
+          handler: handleScheduleLogged
+        - event: ExecutionUpdated(uint256,uint8,string,address)
+          handler: handleExecutionUpdated
+        - event: RatingSubmitted(uint256,uint256)
+          handler: handleRatingSubmitted
+        - event: RouterDecisionLogged(uint256,address,bytes32)
+          handler: handleRouterDecisionLogged
+      file: ./src/mapping.ts
+
+templates:
+  - name: Agent
+    kind: ethereum
+    network: hardhat
+    source:
+      abi: AgentDID
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Agent
+      abis:
+        - name: AgentDID
+          file: ./abis/AgentDID.json
+      eventHandlers:
+        - event: AgentRegistered(address,string,bytes32,string,address)
+          handler: handleAgentRegistered
+      file: ./src/agent-mapping.ts

@@ -303,52 +303,52 @@ export default function Dashboard() {
               <button className="btn-secondary btn-sm" onClick={() => setSelectedAgent(null)}>关闭</button>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>DID</div>
+            <div className="modal-section">
+              <div className="field-label">DID</div>
               <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', wordBreak: 'break-all' }}>{selectedAgent.did}</div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            <div className="field-grid-2 modal-section">
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>资质类型</div>
+                <div className="field-label">资质类型</div>
                 <span className={`badge qual-${selectedAgent.qualification}`}>
                   {QUALIFICATION_CONFIG[selectedAgent.qualification]?.name || selectedAgent.qualification}
                 </span>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>状态</div>
+                <div className="field-label">状态</div>
                 <span className={`badge ${selectedAgent.isActive ? 'badge-success' : 'badge-warning'}`}>
                   {selectedAgent.isActive ? '活跃' : '未激活'}
                 </span>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+            <div className="field-grid-3 modal-section">
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>信誉分</div>
+                <div className="field-label">信誉分</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 700, color: getScoreColor(selectedAgent.trustScore) }}>
                   {selectedAgent.reputation}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>评分次数</div>
+                <div className="field-label">评分次数</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{selectedAgent.ratingCount}</div>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>排名</div>
+                <div className="field-label">排名</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--primary)' }}>
                   #{sortedAgents.findIndex(a => a.address === selectedAgent.address) + 1}
                 </div>
               </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>注册时间</div>
+            <div className="modal-section">
+              <div className="field-label">注册时间</div>
               <div>{formatTime(selectedAgent.registeredAt)}</div>
             </div>
 
             <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>地址</div>
+              <div className="field-label">地址</div>
               <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 6, wordBreak: 'break-all' }}>
                 {selectedAgent.address}
               </div>

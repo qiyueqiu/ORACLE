@@ -148,7 +148,7 @@ export default function AuditLog() {
             <option value="3">超时</option>
           </select>
         </div>
-        <div style={{ marginTop: 8, fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+        <div className="meta-text" style={{ marginTop: 8 }}>
           显示 {filteredRecords.length} / {records.length} 条
         </div>
       </div>
@@ -176,11 +176,11 @@ export default function AuditLog() {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <span className={`badge ${status.cls}`}>{status.label}</span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>#{r.id}</span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>{formatTime(r.timestamp)}</span>
+                        <span className="meta-text">#{r.id}</span>
+                        <span className="meta-text">{formatTime(r.timestamp)}</span>
                       </div>
                       <div style={{ fontWeight: 500, marginBottom: 6 }}>{r.taskDescription}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                      <div className="meta-text">
                         目标: <span style={{ fontFamily: 'monospace' }}>{shortAddr(r.targetAgent)}</span>
                       </div>
                     </div>
@@ -214,37 +214,37 @@ export default function AuditLog() {
               <button className="btn-secondary btn-sm" onClick={() => setSelectedRecord(null)}>关闭</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            <div className="field-grid-2 modal-section">
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>时间</div>
+                <div className="field-label">时间</div>
                 <div>{formatTime(selectedRecord.timestamp)}</div>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>状态</div>
+                <div className="field-label">状态</div>
                 <span className={`badge ${(STATUS_MAP[String(selectedRecord.executionStatus)]?.cls || 'badge-warning')}`}>
                   {STATUS_MAP[String(selectedRecord.executionStatus)]?.label}
                 </span>
               </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>任务描述</div>
+            <div className="modal-section">
+              <div className="field-label">任务描述</div>
               <div>{selectedRecord.taskDescription}</div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            <div className="field-grid-2 modal-section">
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>请求者</div>
+                <div className="field-label">请求者</div>
                 <div style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{selectedRecord.requester}</div>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>目标 Agent</div>
+                <div className="field-label">目标 Agent</div>
                 <div style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{selectedRecord.targetAgent}</div>
               </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>执行结果</div>
+            <div className="modal-section">
+              <div className="field-label">执行结果</div>
               <div style={{
                 padding: 12, background: 'var(--bg-secondary)', borderRadius: 6,
                 whiteSpace: 'pre-wrap', fontSize: '0.85rem', maxHeight: 300, overflow: 'auto',
@@ -254,8 +254,8 @@ export default function AuditLog() {
             </div>
 
             {selectedRecord.reputationRating > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>信誉评分</div>
+              <div className="modal-section">
+                <div className="field-label">信誉评分</div>
                 <div style={{ fontSize: '1.5rem', color: 'var(--warning)' }}>
                   {'★'.repeat(selectedRecord.reputationRating)}{'☆'.repeat(5 - selectedRecord.reputationRating)}
                   <span style={{ fontSize: '0.9rem', marginLeft: 8 }}>({selectedRecord.reputationRating}/5)</span>
@@ -264,7 +264,7 @@ export default function AuditLog() {
             )}
 
             <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>交易哈希</div>
+              <div className="field-label">交易哈希</div>
               <div style={{
                 fontFamily: 'monospace', fontSize: '0.75rem', padding: 10,
                 background: 'var(--bg-secondary)', borderRadius: 6, wordBreak: 'break-all',

@@ -105,7 +105,7 @@ export default function Reputation() {
       </div>
 
       {/* 可靠性等级说明 */}
-      <div className="card" style={{ background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)', borderColor: '#bae6fd' }}>
+      <div className="card info-panel-info">
         <div className="card-header">
           <span className="card-title">🏷️ 可靠性等级</span>
         </div>
@@ -148,14 +148,7 @@ export default function Reputation() {
               return (
                 <div key={agent.address} className="agent-card" onClick={() => setSelectedAgent(agent)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: 10,
-                      background: 'var(--primary-light)', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 700, color: 'var(--primary)', fontSize: '0.9rem',
-                    }}>
-                      #{index + 1}
-                    </div>
+                    <div className="rank-badge">#{index + 1}</div>
                     <div className="agent-avatar" style={{ background: config ? `${config.color}20` : 'var(--bg-secondary)' }}>
                       {config?.icon || '🤖'}
                     </div>
@@ -179,7 +172,7 @@ export default function Reputation() {
                       <span style={{ fontWeight: 600, color: getRatingColor(agent.avgRating) }}>
                         {agent.avgRating} / 100
                       </span>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                      <span className="meta-text">
                         {agent.ratingCount} 次评分
                       </span>
                     </div>
@@ -203,7 +196,7 @@ export default function Reputation() {
       </div>
 
       {/* 评分机制说明 */}
-      <div className="card" style={{ background: 'linear-gradient(135deg, #fefce8 0%, #fef9c3 100%)', borderColor: '#fde68a' }}>
+      <div className="card info-panel-warning">
         <div className="card-header">
           <span className="card-title">📋 百分制信誉评分机制</span>
         </div>
@@ -261,66 +254,66 @@ export default function Reputation() {
               <button className="btn-secondary btn-sm" onClick={() => setSelectedAgent(null)}>关闭</button>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>Agent</div>
+            <div className="modal-section">
+              <div className="field-label">Agent</div>
               <div style={{ fontWeight: 600 }}>{selectedAgent.did}</div>
               <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: 2 }}>
                 {selectedAgent.address}
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            <div className="field-grid-2 modal-section">
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>资质</div>
+                <div className="field-label">资质</div>
                 <span className={`badge qual-${selectedAgent.qualification}`}>
                   {QUALIFICATION_CONFIG[selectedAgent.qualification]?.icon} {QUALIFICATION_CONFIG[selectedAgent.qualification]?.name}
                 </span>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>可靠性</div>
+                <div className="field-label">可靠性</div>
                 <span className={`badge ${(RELIABILITY_MAP[selectedAgent.reliabilityLevel]?.cls || 'badge-warning')}`}>
                   {RELIABILITY_MAP[selectedAgent.reliabilityLevel]?.icon} {RELIABILITY_MAP[selectedAgent.reliabilityLevel]?.label}
                 </span>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>趋势</div>
+                <div className="field-label">趋势</div>
                 <span className={`badge ${(TREND_MAP[selectedAgent.trend]?.cls || 'badge-warning')}`}>
                   {TREND_MAP[selectedAgent.trend]?.icon} {TREND_MAP[selectedAgent.trend]?.label}
                 </span>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>状态</div>
+                <div className="field-label">状态</div>
                 <span className={`badge ${selectedAgent.isActive ? 'badge-success' : 'badge-danger'}`}>
                   {selectedAgent.isActive ? '🟢 活跃' : '🔴 停用'}
                 </span>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div className="field-grid-4 modal-section">
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>信誉分</div>
+                <div className="field-label">信誉分</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 700, color: getRatingColor(selectedAgent.avgRating) }}>
                   {selectedAgent.avgRating}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>成功率</div>
+                <div className="field-label">成功率</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--primary)' }}>
                   {selectedAgent.successRate}%
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>评分次数</div>
+                <div className="field-label">评分次数</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{selectedAgent.ratingCount}</div>
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 4 }}>总分</div>
+                <div className="field-label">总分</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{selectedAgent.totalScore}</div>
               </div>
             </div>
 
             <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 8 }}>信誉评分进度</div>
+              <div className="field-label" style={{ marginBottom: 8 }}>信誉评分进度</div>
               <div className="reputation-bar" style={{ height: 14 }}>
                 <div className="reputation-bar-track" style={{ height: 14 }}>
                   <div

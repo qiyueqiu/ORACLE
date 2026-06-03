@@ -64,6 +64,13 @@ const QUALITY_MAP: Record<string, { label: string; cls: string; color: string }>
 const API_BASE = 'http://localhost:3001';
 const API_KEY = 'demo-key-change-me';
 
+const EXAMPLE_TASKS: { label: string; task: string }[] = [
+  { label: '🛡️ 代码安全审查', task: '审查一段 JavaScript 代码的安全性，检查是否有 XSS、SQL 注入等漏洞' },
+  { label: '📊 数据分析', task: '分析上个月销售数据并给出趋势与改进建议' },
+  { label: '🌐 文档翻译', task: '把这段技术文档翻译成英文，保持术语准确' },
+  { label: '✍️ 内容创作', task: '为新产品写一段 200 字的品牌介绍，目标受众是开发者' },
+];
+
 export default function Dispatch() {
   const [task, setTask] = useState('');
   const [loading, setLoading] = useState(false);
@@ -346,6 +353,30 @@ export default function Dispatch() {
         </div>
       </div>
 
+      {phase === 'idle' && (
+        <div className="card info-panel-info">
+          <div className="card-header">
+            <span className="card-title">💡 试试这些任务</span>
+          </div>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
+            点击下方任一示例可自动填入任务输入框
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {EXAMPLE_TASKS.map(ex => (
+              <button
+                key={ex.label}
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => setTask(ex.task)}
+                disabled={loading}
+              >
+                {ex.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {phase !== 'idle' && (
         <div className="card">
           <div className="card-header">
@@ -499,21 +530,23 @@ export default function Dispatch() {
                 const d = reputationAnalysis.dimensions[key];
                 if (!d) return null;
                 const pct = (d.score / dim.max) * 100;
+                const color = getScoreColor((d.score / dim.max) * 100);
                 return (
-                  <div key={key} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <div key={key} className="dimension-row" style={{ marginBottom: 10 }}>
+                    <div className="dimension-header">
                       <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{dim.name} <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>(满分 {dim.max})</span></span>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: getScoreColor((d.score / dim.max) * 100) }}>{d.score}</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color }}>{d.score}</span>
                     </div>
-                    <div style={{ height: 6, background: 'var(--bg-secondary)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', width: `${pct}%`, borderRadius: 3,
-                        background: getScoreColor((d.score / dim.max) * 100),
-                        transition: 'width 0.5s ease',
-                      }} />
+                    <div className="reputation-bar reputation-bar--sm">
+                      <div className="reputation-bar-track">
+                        <div
+                          className="reputation-bar-fill"
+                          style={{ width: `${pct}%`, background: color }}
+                        />
+                      </div>
                     </div>
                     {d.reason && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: 3, lineHeight: 1.4 }}>{d.reason}</div>
+                      <div className="dimension-reason">{d.reason}</div>
                     )}
                   </div>
                 );
@@ -552,7 +585,7 @@ export default function Dispatch() {
       )}
 
       {phase === 'done' && lastAgentAddress && (
-        <div className="card" style={{ background: 'linear-gradient(135deg, #fefce8 0%, #fef9c3 100%)', borderColor: '#fde68a' }}>
+        <div className="card info-panel-warning">
           <div className="card-header">
             <span className="card-title">⭐ 你的评价</span>
             {userRatingSubmitted && <span className="badge badge-success">已提交，感谢！</span>}

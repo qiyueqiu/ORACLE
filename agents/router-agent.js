@@ -8,8 +8,8 @@ const { SiliconFlowClient } = require('./siliconflow-client');
 const { AgentDIDABI, ReputationABI } = require('../shared/abis');
 
 class RouterAgent {
-  constructor(apiKey, providerUrl, contractAddresses) {
-    this.llm = new SiliconFlowClient(apiKey);
+  constructor(apiKey, providerUrl, contractAddresses, siliconflowClient) {
+    this.llm = siliconflowClient || new SiliconFlowClient(apiKey);
     this.provider = new ethers.JsonRpcProvider(providerUrl);
     this.contracts = {
       agentDID: new ethers.Contract(contractAddresses.AgentDID, AgentDIDABI, this.provider),

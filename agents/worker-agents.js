@@ -93,8 +93,8 @@ const QUALIFICATION_CONFIG = {
 };
 
 class WorkerAgent {
-  constructor(apiKey, agentInfo) {
-    this.llm = new SiliconFlowClient(apiKey);
+  constructor(apiKey, agentInfo, siliconflowClient) {
+    this.llm = siliconflowClient || new SiliconFlowClient(apiKey);
     this.info = agentInfo;
     this.config = QUALIFICATION_CONFIG[agentInfo.qualification] || QUALIFICATION_CONFIG.content;
     this.executionLog = [];

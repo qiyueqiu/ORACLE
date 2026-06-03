@@ -2,20 +2,22 @@
  * WorkerAgent / WorkerAgents 单元测试
  * 覆盖: buildPrompt / selectModel / chatWithChainOfThought / execute
  *
- * 用 axios-mock-adapter 拦截 HTTP 调用
+ * 用 instance-level axios-mock-adapter
  */
 const { expect } = require("chai");
 const axios = require("axios");
 const MockAdapter = require("axios-mock-adapter");
 const { WorkerAgent, QUALIFICATION_CONFIG } = require("../agents/worker-agents");
+const { SiliconFlowClient } = require("../agents/siliconflow-client");
 
 const SF_URL = "https://api.siliconflow.cn/v1/chat/completions";
 
 describe("agents/worker-agents", function () {
-    let mock;
+    let mock, sfInstance;
 
     beforeEach(function () {
-        mock = new MockAdapter(axios);
+        sfInstance = axios.create();
+        mock = new MockAdapter(sfInstance);
     });
 
     afterEach(function () {
@@ -71,7 +73,7 @@ describe("agents/worker-agents", function () {
                 model: "m",
             });
             const info = { did: "test", address: "0x1", qualification: "code_review" };
-            const w = new WorkerAgent("k", info);
+            const w = new WorkerAgent("k", info, new SiliconFlowClient("k", sfInstance));
             const r = await w.chatWithChainOfThought("m", "test");
             expect(r.chainOfThought).to.equal("让我想想");
         });
@@ -83,7 +85,7 @@ describe("agents/worker-agents", function () {
                 model: "m",
             });
             const info = { did: "test", address: "0x1", qualification: "code_review" };
-            const w = new WorkerAgent("k", info);
+            const w = new WorkerAgent("k", info, new SiliconFlowClient("k", sfInstance));
             const r = await w.chatWithChainOfThought("m", "test");
             expect(r.chainOfThought).to.equal("");
             expect(r.content).to.equal("no tags here");
@@ -98,7 +100,7 @@ describe("agents/worker-agents", function () {
                 model: "m",
             });
             const info = { did: "did:codeReview1", address: "0xAgent1", qualification: "code_review" };
-            const w = new WorkerAgent("k", info);
+            const w = new WorkerAgent("k", info, new SiliconFlowClient("k", sfInstance));
             const r = await w.execute("audit code", { selectedAgent: "did:codeReview1", reputation: 90 });
             expect(r.result).to.equal("completed");
             expect(r.chainOfThought).to.equal("analyze");
@@ -109,7 +111,7 @@ describe("agents/worker-agents", function () {
         it("Should propagate LLM errors", async function () {
             mock.onPost(SF_URL).networkError();
             const info = { did: "x", address: "0x1", qualification: "code_review" };
-            const w = new WorkerAgent("k", info);
+            const w = new WorkerAgent("k", info, new SiliconFlowClient("k", sfInstance));
             try {
                 await w.execute("x");
                 expect.fail("Should have thrown");

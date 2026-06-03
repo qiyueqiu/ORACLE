@@ -1,14 +1,16 @@
 /**
  * SiliconFlow API 工具类
- * 用于调用 LLM 模型进行意图解析、决策和任务执行
+ * 用于调用 LLM 进行意图解析、决策和任务执行
  */
 
 const axios = require('axios');
 
 class SiliconFlowClient {
-  constructor(apiKey) {
+  constructor(apiKey, axiosInstance) {
     this.apiKey = apiKey;
     this.baseURL = 'https://api.siliconflow.cn/v1';
+    // 每个 instance 独立的 axios（支持测试时传 mock adapter 包装的 instance）
+    this.axios = axiosInstance || axios.create();
   }
 
   /**
@@ -19,7 +21,7 @@ class SiliconFlowClient {
    */
   async chat(model, messages, options = {}) {
     try {
-      const response = await axios.post(
+      const response = await this.axios.post(
         `${this.baseURL}/chat/completions`,
         {
           model,

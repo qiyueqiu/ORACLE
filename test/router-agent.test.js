@@ -1,7 +1,7 @@
 /**
  * RouterAgent 单元测试
  * 覆盖 parseIntent / getCandidateAgents / evaluateCandidates / makeDecision / route
- * 通过 axios-mock-adapter 拦截 SiliconFlow HTTP 调用避免触达真实 LLM
+ * 通过 instance-level axios-mock-adapter 拦截 SiliconFlow HTTP 调用
  */
 const { expect } = require("chai");
 const sinon = require("sinon");
@@ -13,7 +13,7 @@ const SF_URL = "https://api.siliconflow.cn/v1/chat/completions";
 
 describe("agents/router-agent", function () {
     let router;
-    let mock;
+    let mock, sfInstance;
     let mockAgentDID, mockReputation;
 
     beforeEach(function () {
@@ -31,14 +31,14 @@ describe("agents/router-agent", function () {
         const ethers = require("ethers");
         sinon.stub(ethers, "JsonRpcProvider").returns(provider);
 
+        sfInstance = axios.create();
+        mock = new MockAdapter(sfInstance);
         router = new RouterAgent("test-key", "http://localhost:8545", {
             AgentDID: "0xAgentDID",
             Reputation: "0xReputation",
-        });
+        }, new (require("../agents/siliconflow-client").SiliconFlowClient)("test-key", sfInstance));
         router.contracts.agentDID = mockAgentDID;
         router.contracts.reputation = mockReputation;
-
-        mock = new MockAdapter(axios);
     });
 
     afterEach(function () {
@@ -164,8 +164,6 @@ describe("agents/router-agent", function () {
         });
 
         it("Should return selected agent and executionLog", async function () {
-            // 路由会多次调用 chatWithJson（parseIntent + evaluateCandidates），
-            // mock 适配器对同一 URL+method 默认会持续匹配
             mock.onPost(SF_URL).reply(200, {
                 choices: [{ message: { content: '{"intent":"x","requiredQualification":"code_review","complexity":"simple","priority":"quality","rankings":[{"index":0,"score":90,"reason":"best"}],"decision":"ok"}' } }],
                 usage: { total_tokens: 5 },

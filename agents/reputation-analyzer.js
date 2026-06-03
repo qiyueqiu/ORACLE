@@ -29,8 +29,8 @@ const SCORING_DIMENSIONS = [
 ];
 
 class ReputationAnalyzerAgent {
-  constructor(apiKey, providerUrl, contractAddresses) {
-    this.llm = new SiliconFlowClient(apiKey);
+  constructor(apiKey, providerUrl, contractAddresses, siliconflowClient) {
+    this.llm = siliconflowClient || new SiliconFlowClient(apiKey);
     this.provider = new ethers.JsonRpcProvider(providerUrl);
     this.contracts = {
       agentDID: new ethers.Contract(contractAddresses.AgentDID, AgentDIDABI, this.provider),

@@ -1,19 +1,20 @@
 /**
  * ReputationAnalyzerAgent 单元测试
- * 覆盖: analyzeExecutionTrace / calculateTrend / fullAnalysis / submitUserRating / submitRatingOnChain
+ * 覆盖: analyzeExecutionTrace / calculateTrend / fullAnalysis
  *
- * 用 axios-mock-adapter 拦截 HTTP 调用
+ * 用 instance-level axios-mock-adapter
  */
 const { expect } = require("chai");
 const sinon = require("sinon");
 const axios = require("axios");
 const MockAdapter = require("axios-mock-adapter");
 const { ReputationAnalyzerAgent, SCORING_DIMENSIONS } = require("../agents/reputation-analyzer");
+const { SiliconFlowClient } = require("../agents/siliconflow-client");
 
 const SF_URL = "https://api.siliconflow.cn/v1/chat/completions";
 
 describe("agents/reputation-analyzer", function () {
-    let analyzer, mock;
+    let analyzer, mock, sfInstance;
     let mockSigner, mockReputation;
 
     beforeEach(function () {
@@ -25,13 +26,15 @@ describe("agents/reputation-analyzer", function () {
             getAverageRating: sinon.stub().resolves(80),
             isReliable: sinon.stub().resolves(true),
         };
+
+        sfInstance = axios.create();
+        mock = new MockAdapter(sfInstance);
+
         analyzer = new ReputationAnalyzerAgent("k", "http://localhost:8545", {
             AgentDID: "0xA", AuditLog: "0xAL", Reputation: "0xR",
-        });
+        }, new SiliconFlowClient("k", sfInstance));
         analyzer.contracts.reputation = mockReputation;
         analyzer.signer = mockSigner;
-
-        mock = new MockAdapter(axios);
     });
 
     afterEach(function () {

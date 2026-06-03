@@ -2,7 +2,8 @@
  * SiliconFlowClient 单元测试
  * 覆盖 chat / chatWithJson happy path 与错误处理
  *
- * 用 axios-mock-adapter 拦截 HTTP 请求，避免触达真实 SiliconFlow API
+ * 用 instance-level axios + axios-mock-adapter 拦截，避免 axios 1.16 fetch adapter
+ * 兼容性问题（全局 mock adapter 会被 fetch adapter 绕过）
  */
 const { expect } = require("chai");
 const axios = require("axios");
@@ -10,11 +11,12 @@ const MockAdapter = require("axios-mock-adapter");
 const { SiliconFlowClient } = require("../agents/siliconflow-client");
 
 describe("agents/siliconflow-client", function () {
-    let client, mock;
+    let client, mock, instance;
 
     beforeEach(function () {
-        client = new SiliconFlowClient("test-api-key");
-        mock = new MockAdapter(axios);
+        instance = axios.create();
+        mock = new MockAdapter(instance);
+        client = new SiliconFlowClient("test-api-key", instance);
     });
 
     afterEach(function () {

@@ -42,3 +42,6 @@ paper/build/
 
 # 临时探索文件（CTAN/文档 HTML 下载）
 *.html
+
+# LaTeX 临时输出
+texput.log

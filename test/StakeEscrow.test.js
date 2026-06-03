@@ -88,12 +88,19 @@ describe("AgentStake + PaymentEscrow (改造 6)", function () {
     });
 
     describe("PaymentEscrow", function () {
+        let FAR_DEADLINE;
         beforeEach(async function () {
             await token.connect(payer).approve(await escrow.getAddress(), ethers.parseEther("1000"));
+            // 重置 hardhat 时间：设到比当前 hardhat 时间 + 1（避免倒退）
+            const next = (await ethers.provider.getBlock("latest")).timestamp + 1;
+            await ethers.provider.send("evm_setNextBlockTimestamp", [next]);
+            await ethers.provider.send("evm_mine", []);
+            // 每次重新计算远期 deadline（取最新 hardhat 时间 + 1000 年）
+            FAR_DEADLINE = next + 1000 * 365 * 24 * 3600;
         });
 
         it("Should fund task", async function () {
-            const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const deadline = FAR_DEADLINE;
             const amount = ethers.parseEther("100");
             await escrow.connect(payer).fundTask(1, worker.address, deadline, amount);
             const e = await escrow.getEscrow(1);
@@ -104,7 +111,7 @@ describe("AgentStake + PaymentEscrow (改造 6)", function () {
         });
 
         it("Should reject double-funding same recordId", async function () {
-            const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const deadline = FAR_DEADLINE;
             await escrow.connect(payer).fundTask(1, worker.address, deadline, ethers.parseEther("100"));
             await expect(
                 escrow.connect(payer).fundTask(1, worker.address, deadline, ethers.parseEther("100"))
@@ -112,7 +119,7 @@ describe("AgentStake + PaymentEscrow (改造 6)", function () {
         });
 
         it("Should release on success (only auditLog)", async function () {
-            const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const deadline = FAR_DEADLINE;
             const amount = ethers.parseEther("100");
             await escrow.connect(payer).fundTask(1, worker.address, deadline, amount);
             await expect(escrow.connect(other).release(1)).to.be.revertedWith("Only AuditLog");
@@ -128,10 +135,11 @@ describe("AgentStake + PaymentEscrow (改造 6)", function () {
         });
 
         it("Should refund after deadline", async function () {
-            const deadline = Math.floor(Date.now() / 1000) + 60;
+            const deadline = FAR_DEADLINE;
             const amount = ethers.parseEther("100");
             await escrow.connect(payer).fundTask(1, worker.address, deadline, amount);
-            await ethers.provider.send("evm_increaseTime", [120]);
+            // 推进时间超过 deadline（1100 年）
+            await ethers.provider.send("evm_increaseTime", [1100 * 365 * 24 * 3600]);
             await ethers.provider.send("evm_mine", []);
             const balanceBefore = await token.balanceOf(payer.address);
             await escrow.connect(payer).refund(1);
@@ -142,15 +150,15 @@ describe("AgentStake + PaymentEscrow (改造 6)", function () {
         });
 
         it("Should not allow refund before deadline", async function () {
-            const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const deadline = FAR_DEADLINE;
             await escrow.connect(payer).fundTask(1, worker.address, deadline, ethers.parseEther("100"));
             await expect(escrow.connect(payer).refund(1)).to.be.revertedWith("Not past deadline");
         });
 
         it("Should not allow non-payer to refund", async function () {
-            const deadline = Math.floor(Date.now() / 1000) + 60;
+            const deadline = FAR_DEADLINE;
             await escrow.connect(payer).fundTask(1, worker.address, deadline, ethers.parseEther("100"));
-            await ethers.provider.send("evm_increaseTime", [120]);
+            await ethers.provider.send("evm_increaseTime", [1100 * 365 * 24 * 3600]);
             await ethers.provider.send("evm_mine", []);
             await expect(escrow.connect(other).refund(1)).to.be.revertedWith("Not payer");
         });

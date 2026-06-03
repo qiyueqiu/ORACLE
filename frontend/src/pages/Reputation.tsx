@@ -33,14 +33,6 @@ const RELIABILITY_MAP: Record<string, { label: string; icon: string; cls: string
   unrated: { label: '未评估', icon: '❔', cls: 'badge-warning', desc: '尚未执行过任务' },
 };
 
-const QUALITY_LABELS: Record<string, { label: string; color: string }> = {
-  excellent: { label: '优秀', color: 'var(--success)' },
-  good: { label: '良好', color: 'var(--primary)' },
-  acceptable: { label: '合格', color: 'var(--warning)' },
-  poor: { label: '较差', color: '#f97316' },
-  failing: { label: '不合格', color: 'var(--danger)' },
-};
-
 export default function Reputation() {
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -79,14 +71,6 @@ export default function Reputation() {
     if (rating >= 60) return 'var(--primary)';
     if (rating >= 40) return 'var(--warning)';
     return 'var(--danger)';
-  };
-
-  const getRatingLevel = (rating: number) => {
-    if (rating >= 80) return '优秀';
-    if (rating >= 60) return '良好';
-    if (rating >= 40) return '合格';
-    if (rating >= 20) return '较差';
-    return '不合格';
   };
 
   const sortedAgents = [...agents].sort((a, b) => b.avgRating - a.avgRating);

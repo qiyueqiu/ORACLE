@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /**
  * @title AsbCCIPSender（M3 改造 11 - 跨链同步）
  * @notice 通过 Chainlink CCIP 把 AuditLog 调度记录跨链同步到目标链
+ * 真实部署需引入 chainlink 合约库（src imports ccip/AsbCCIP.sol:11 for detail）
  *
  * 流程：
  *   1. 源链 AsbCCIPSender.ccipSend(destChainSelector, recordId) 编码 ScheduleRecord
@@ -15,7 +16,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * 当前实现（M3 阶段）：
  *   - 抽象接口：CCIP 消息体格式 + ccipSend 调用点
  *   - 不引入 Chainlink 完整库（避免依赖冲突）
- *   - 生产部署需引入 @chainlink/contracts 并补完实际 CCIP router 集成
+ *   - 生产部署需引入 chainlink 合约库并补完实际 CCIP router 集成
  */
 contract AsbCCIPSender is Ownable {
     address public ccipRouter;        // Chainlink CCIP Router on source chain

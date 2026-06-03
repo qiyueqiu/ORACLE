@@ -137,15 +137,34 @@ class Metrics {
      */
     toPrometheus() {
         const lines = [];
-        for (const [k, v] of this.counters) lines.push(`${k} ${v}`);
-        for (const [k, v] of this.gauges) lines.push(`${k} ${v}`);
+        for (const [k, v] of this.counters) lines.push(this._format(k, v));
+        for (const [k, v] of this.gauges) lines.push(this._format(k, v));
         for (const [k, vs] of this.histograms) {
             const sum = vs.reduce((a, b) => a + b, 0);
             const count = vs.length;
-            lines.push(`${k}_sum ${sum}`);
-            lines.push(`${k}_count ${count}`);
+            const { name, labels } = this._split(k);
+            const labelStr = Object.keys(labels).length ? this._formatLabels(labels) : '';
+            lines.push(`${name}${labelStr}_sum ${sum}`);
+            lines.push(`${name}${labelStr}_count ${count}`);
         }
         return lines.join('\n');
+    }
+
+    _split(key) {
+        // key 形如 "metric_name{...}"
+        const m = key.match(/^([^{]*)(\{.*\})?$/);
+        return { name: m[1], labels: m[2] ? JSON.parse(m[2]) : {} };
+    }
+
+    _formatLabels(labels) {
+        const parts = Object.entries(labels).map(([k, v]) => `${k}="${v}"`);
+        return '{' + parts.join(',') + '}';
+    }
+
+    _format(key, value) {
+        const { name, labels } = this._split(key);
+        const labelStr = Object.keys(labels).length ? this._formatLabels(labels) : '';
+        return `${name}${labelStr} ${value}`;
     }
 }
 

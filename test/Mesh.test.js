@@ -39,12 +39,12 @@ describe("Service Mesh Sidecar (M3)", function () {
                 { address: "low", avgRating: 10, recentFailureRate: 0 },
                 { address: "high", avgRating: 90, recentFailureRate: 0 },
             ];
-            // 多次抽样，高 reputation 应被选中更多次
+            // 多次抽样，高 reputation 应被选中更多次（容差放宽到 60%）
             let count = 0;
-            for (let i = 0; i < 200; i++) {
+            for (let i = 0; i < 500; i++) {
                 if (lb.pick(candidates)?.address === "high") count++;
             }
-            expect(count).to.be.greaterThan(120);  // 期望显著多
+            expect(count).to.be.greaterThan(300);
         });
     });
 

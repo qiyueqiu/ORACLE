@@ -134,7 +134,7 @@ class RouterAgent {
       `#${i + 1} ${c.did} | 资质:${c.qualification} | 信誉:${c.avgRating}/5 (${c.ratingCount}评)`
     ).join('\n');
 
-    const prompt = `任务: ${intent.intent}\n资质要求: ${requiredQualification}\n\nAgent列表:\n${candidatesSummary}\n\n评分规则（与论文公式 (3) 一致）: score = 0.6*q + 0.4*r_norm，q∈{60,40}（资质匹配 60，否则 40），r_norm = avgRating*8（0-5 → 0-40），满分 100。\n返回JSON: {"rankings":[{"index":0,"score":85,"reason":"..."}],"decision":"选择理由"}`;
+    const prompt = `任务: ${intent.intent}\n资质要求: ${requiredQualification}\n\nAgent列表:\n${candidatesSummary}\n\n评分规则（与论文公式 (3) 一致）: score = 0.6*q + 0.4*rNorm，q∈{60,40}（资质匹配 60，否则 40），rNorm = avgRating*0.4（百分制 0-100 → 0-40），满分 100。\n返回JSON: {"rankings":[{"index":0,"score":85,"reason":"..."}],"decision":"选择理由"}`;
 
     const stepId = this.generateStepId();
     const startTime = Date.now();
@@ -189,11 +189,11 @@ class RouterAgent {
       this.executionLog.push(logEntry);
 
       // 规则评分（改造 A3）：与论文公式 (3) 严格一致
-      // score = 0.6 * q + 0.4 * r_norm，其中 q ∈ {60, 40}，r_norm = avgRating * 8（0-5 星 → 0-40）
-      // 满分 100。LLM 路径与 Fallback 路径共享同一线性权重函数。
+      // score = 0.6 * q + 0.4 * rNorm，其中 q ∈ {60, 40}，rNorm = avgRating * 0.4
+      // （百分制 0-100 信誉缩放到 0-40 范围）满分 100。LLM 路径与 Fallback 路径共享同一线性权重函数。
       candidates.forEach((c, i) => {
         const q = c.qualification === requiredQualification ? 60 : 40;
-        const rNorm = c.avgRating * 8;
+        const rNorm = c.avgRating * 0.4;
         c.score = 0.6 * q + 0.4 * rNorm;
         c.reason = c.qualification === requiredQualification ? '资质完全匹配' : '资质部分匹配';
       });

@@ -133,6 +133,25 @@ describe("agents/router-agent", function () {
             expect(decision).to.be.a("string");
             expect(decision.length).to.be.greaterThan(0);
         });
+
+        // 改造 9：论文公式 (3) 与代码严格一致 —— 百分制 0-100 信誉缩放到 0-40
+        it("Fallback rule-based score should use 0.6*q + 0.4*(avgRating*0.4) for 0-100 scale", async function () {
+            mock.onPost(SF_URL).networkError();
+            const candidates = [
+                { address: "0xA", did: "agentA", qualification: "code_review", avgRating: 100 },
+                { address: "0xB", did: "agentB", qualification: "content",     avgRating: 0   },
+            ];
+            const { candidates: ranked } = await router.evaluateCandidates(
+                candidates, { requiredQualification: "code_review" }, "code_review"
+            );
+            // 0xA: 匹配资质 q=60, rNorm=40 -> 0.6*60+0.4*40 = 36+16 = 52
+            // 0xB: 不匹配 q=40, rNorm=0   -> 0.6*40+0.4*0  = 24+0  = 24
+            const a = ranked.find(c => c.address === "0xA");
+            const b = ranked.find(c => c.address === "0xB");
+            expect(a.score).to.be.closeTo(52, 0.001);
+            expect(b.score).to.be.closeTo(24, 0.001);
+            expect(ranked[0].address).to.equal("0xA");
+        });
     });
 
     describe("makeDecision", function () {

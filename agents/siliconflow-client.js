@@ -20,6 +20,7 @@ class SiliconFlowClient {
    * @param {Object} options - 额外选项
    */
   async chat(model, messages, options = {}) {
+    const timeoutMs = options.timeoutMs ?? 30000;  // 默认 30s 防卡
     try {
       const response = await this.axios.post(
         `${this.baseURL}/chat/completions`,
@@ -36,7 +37,7 @@ class SiliconFlowClient {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
           },
-          timeout: 60000,
+          timeout: timeoutMs,
         }
       );
 

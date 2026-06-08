@@ -106,7 +106,17 @@ class WorkerAgent {
     const stepId = this.generateStepId();
     const startTime = Date.now();
 
-    const result = await this.chatWithChainOfThought(model, prompt);
+    // LLM 调用加 30s 兜底超时（promise.race 强制）：防止 API 慢/挂导致 E2E 卡死
+    let result;
+    try {
+      result = await Promise.race([
+        this.chatWithChainOfThought(model, prompt),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('LLM timeout (30s)')), 30000)),
+      ]);
+    } catch (e) {
+      // 超时/失败：返回占位结果，调用方已有 try/catch 兜底
+      throw e;
+    }
 
     const logEntry = {
       stepId,

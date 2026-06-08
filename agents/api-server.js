@@ -212,14 +212,27 @@ app.post('/api/dispatch/stream', async (req, res) => {
   let selected = null;
   let recordId = null;
   let taskHash = ethers.keccak256(ethers.toUtf8Bytes(task));
-  // 改造 3：commitment 优先用前端提供的；否则从 task+timestamp 派生
+  // 改造 A4：完整 commit-reveal —— commitment = keccak256(taskDescription || salt)
+  // 若前端未提供 salt，则随机生成 32 字节 salt 并随事件流回传，确保事后可揭示。
+  let finalSalt = taskSalt;
+  if (!finalSalt || finalSalt === '0x' + '0'.repeat(64)) {
+    finalSalt = ethers.hexlify(ethers.randomBytes(32));
+  }
   let finalCommitment = taskCommitment;
   if (!finalCommitment || finalCommitment === '0x' + '0'.repeat(64)) {
-    finalCommitment = taskHash;  // 旧路径兜底
+    finalCommitment = ethers.keccak256(
+      ethers.solidityPacked(['string', 'bytes32'], [task, finalSalt])
+    );
   }
 
   try {
-    sendEvent('start', { message: '开始处理任务...', task, taskHash, taskCommitment: finalCommitment });
+    sendEvent('start', {
+      message: '开始处理任务...',
+      task,
+      taskHash,
+      taskCommitment: finalCommitment,
+      taskSalt: finalSalt,  // 改造 A4：salt 随事件流回传，供事后揭示
+    });
 
     // Phase 1: 意图解析
     sendEvent('phase', { phase: 'intent_parsing', message: '正在解析任务意图...', icon: '🧠' });
@@ -356,7 +369,15 @@ app.post('/api/dispatch/stream', async (req, res) => {
       recordId = Number(r1.logs[0].topics[1]);  // recordId 是 topic1
 
       // 6.2 写 updateExecutionWithSig（Worker 签名）
-      const resultDigest = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
+      // 改造 A7：resultDigest 绑定 recordId + result + timestamp，杜绝跨记录重放
+      // 公式：resultDigest = keccak256(abi.encode(recordId, keccak256(result), timestamp))
+      const resultHash = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
+      const resultDigest = ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(
+          ['uint256', 'bytes32', 'uint256'],
+          [recordId, resultHash, timestamp]
+        )
+      );
       const workerSig = await workerDemoSigner.signTypedData(
         EIP712_DOMAIN, WORKER_RESULT_TYPES,
         { recordId, resultDigest, timestamp }
@@ -453,7 +474,14 @@ app.post('/api/dispatch', async (req, res) => {
     );
     const r1 = await tx1.wait();
     const recordId = Number(r1.logs[0].topics[1]);
-    const resultDigest = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
+    const resultHash = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
+    // 改造 A7：resultDigest 绑定 recordId + result + timestamp，与流式路径及公式 (\ref{eq:worker-result-digest}) 严格一致
+    const resultDigest = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['uint256', 'bytes32', 'uint256'],
+        [recordId, resultHash, timestamp]
+      )
+    );
     const workerSig = await workerDemoSigner.signTypedData(
       EIP712_DOMAIN, WORKER_RESULT_TYPES,
       { recordId, resultDigest, timestamp }

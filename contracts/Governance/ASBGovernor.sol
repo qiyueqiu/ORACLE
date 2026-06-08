@@ -14,8 +14,11 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   - 投票：持币量加权
  *   - Timelock：执行延迟 24h
  *
- * 不引入完整 OZ Governor（依赖冲突）；提供与 OZ Governor 兼容的接口
- * （未来可平滑切换到 OZ Governor Bravo/Alpha）
+ * ⚠ 论文 A5 注意事项：本文合约**不是** OpenZeppelin Governor 的派生类。
+ *   - 论文第 4.5 节措辞"基于 OpenZeppelin Governor"应理解为"参考其接口设计"
+ *   - 实际继承：仅 Ownable（来自 OZ 的 access/Ownable.sol 路径）
+ *   - 改造理由：完整 OZ Governor 与 OZ ERC20Votes 在当前依赖树中冲突
+ *   - 未来工作（见论文 7.2 节）：平滑切换到 OZ Governor Bravo/Alpha
  */
 contract ASBGovernor is Ownable {
     struct Proposal {

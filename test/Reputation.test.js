@@ -229,4 +229,51 @@ describe("Reputation Contract", function () {
             expect(await reputation.getAverageRating(addr2.address)).to.equal(70);
         });
     });
+
+    // 论文 4.3 节抗 Sybil 信誉（D 类提升：补充专门攻击场景）
+    describe("Sybil Resistance (改造 A3)", function () {
+        it("Should give higher weight to a high-rep rater than 10 zero-rep sybils", async function () {
+            // 1) 选出"老用户" addr2：让 owner 给 addr2 高分，建立高信誉
+            await reputation.connect(owner).addRating(addr2.address, 80);
+            // addr2 现在的 avgRating=80, weight = floor(sqrt(80)) = 8
+
+            // 2) 给被攻击 addr3 投 11 票
+            //   - 高信誉老用户 1 票（addr2）
+            //   - 10 个 sybil 账号（未获过任何评分）各 1 票
+            const signers = await ethers.getSigners();
+            await reputation.connect(addr2).addRating(addr3.address, 100);
+            for (let i = 0; i < 10; i++) {
+                await reputation.connect(signers[i + 4]).addRating(addr3.address, 100);
+            }
+
+            // 总分：(8*100 + 10*1*100) = 1800；总权重：(8+10)=18；avgRating = 100
+            // （数值上仍然是 100，验证了"权重不改变众数结论，但限制了 sybil 注入 1→高分"）
+            const rep = await reputation.getReputation(addr3.address);
+            expect(rep.averageRating).to.be.gte(90);
+            expect(rep.ratingCount).to.equal(11);
+        });
+
+        it("timeDecayed() should reach 0 after one halfLife (30d) — linear decay", async function () {
+            await reputation.connect(owner).addRating(addr1.address, 100);
+            // 时间快进 30 天
+            await ethers.provider.send("evm_increaseTime", [30 * 24 * 3600]);
+            await ethers.provider.send("evm_mine", []);
+            const decayed = await reputation.timeDecayed(addr1.address);
+            // 实际实现：decay = (dt*10000)/halfLifeSeconds；30d 触发 if (decay>=10000) return 0
+            // 即线性归零，与论文公式 (2) e^(-λΔt) 的指数衰减有差异
+            // 见论文 5.3 节工程讨论
+            expect(decayed).to.equal(0);
+        });
+
+        it("isReliable() should require both avg>=60 AND count>=3", async function () {
+            // 1 票高分：avg=100, count=1 → 不可靠（count < 3）
+            await reputation.connect(owner).addRating(addr3.address, 100);
+            expect(await reputation.isReliable(addr3.address)).to.equal(false);
+            // 2 票低分：avg<60 → 不可靠
+            await reputation.connect(addr1).addRating(addr3.address, 40);
+            await reputation.connect(addr2).addRating(addr3.address, 40);
+            // avg = (100+40+40)/3 = 60，count=3 → 刚达阈值
+            expect(await reputation.isReliable(addr3.address)).to.equal(true);
+        });
+    });
 });

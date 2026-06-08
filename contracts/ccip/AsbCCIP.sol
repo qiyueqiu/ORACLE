@@ -8,7 +8,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @notice 通过 Chainlink CCIP 把 AuditLog 调度记录跨链同步到目标链
  * 真实部署需引入 chainlink 合约库（src imports ccip/AsbCCIP.sol:11 for detail）
  *
- * 流程：
+ * ⚠ 论文 A6 注意事项：当前 ccipSend() **不调用真实 Chainlink CCIP router**，
+ *   仅编码 payload 并用 keccak256(payload) 作为 messageId 返回。
+ *   本接口与生产级 CCIP 消息体格式保持一致，部署到主网前需替换为
+ *   `IRouterClient(ccipRouter).ccipSend(destChainSelector, message)` 真实调用。
+ *
+ * 流程（生产版）：
  *   1. 源链 AsbCCIPSender.ccipSend(destChainSelector, recordId) 编码 ScheduleRecord
  *   2. CCIP 消息路由到目标链 AsbCCIPReceiver
  *   3. 目标链 ccipReceive 解码 → 在镜像合约上 replay ScheduleLogged

@@ -114,6 +114,23 @@ export function getInjectedProvider(): any {
 }
 
 export async function connectWallet(): Promise<WalletState> {
+  // 本地开发（chainId 31337）且无 MetaMask：自动 fallback 到 Hardhat 默认 signer
+  // 说明：与 CLAUDE.md 描述一致 —— 本地演示模式使用 Hardhat 内置 signer。
+  if (!hasInjectedProvider()) {
+    const provider = getProvider();
+    const network = await provider.getNetwork();
+    if (Number(network.chainId) === 31337) {
+      const fallbackWallet = new ethers.Wallet(
+        '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
+        provider
+      );
+      _currentSigner = fallbackWallet;
+      _walletState = { address: fallbackWallet.address, chainId: 31337 };
+      _emitChange(_walletState);
+      return _walletState;
+    }
+    throw new Error('No injected wallet provider found. Please install MetaMask.');
+  }
   const injected = getInjectedProvider();
   const accounts: string[] = await injected.request({ method: 'eth_requestAccounts' });
   if (!accounts || accounts.length === 0) throw new Error('No accounts available');

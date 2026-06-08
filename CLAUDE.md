@@ -51,7 +51,7 @@ Tab-based SPA (no router library used for navigation despite react-router-dom be
 - **Dispatch** — Task input + execution tracking
 - **AuditLog** — On-chain audit record query
 
-Connects directly to Hardhat local node via ethers.js v6 using `JsonRpcProvider` + `getSigner()` (no MetaMask — uses Hardhat's default signer).
+Connects to Hardhat local node via ethers.js v6. Uses MetaMask (`window.ethereum` + `BrowserProvider`) when available, **and falls back to Hardhat's default signer (chainId 31337)** when no injected provider is detected — enabling headless E2E tests without a wallet extension.
 
 ## Key Data Flow
 

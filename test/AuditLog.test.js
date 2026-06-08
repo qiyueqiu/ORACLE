@@ -311,4 +311,85 @@ describe("AuditLog Contract", function () {
             expect(await auditLog.getExecutionStatusString(2)).to.equal("Failed");
         });
     });
+
+    // 论文 4.2 节 commit-reveal 双阶段（D 类提升：补充专门测试覆盖 reveal 路径）
+    describe("Commit-Reveal Two-Phase (改造 A4)", function () {
+        const TASK = "审查供应商 X 合同第 5 条违约责任";
+        const SALT = ethers.hexlify(ethers.randomBytes(32));
+        let taskCommitment, recordId, decisionDigest, decisionSig;
+
+        beforeEach(async function () {
+            taskCommitment = ethers.keccak256(
+                ethers.solidityPacked(["string", "bytes32"], [TASK, SALT])
+            );
+            // 通过 logScheduleWithDecision 提交一个自定义 commitment
+            const taskHash = ethers.keccak256(ethers.toUtf8Bytes(TASK));
+            const ts = Math.floor(Date.now() / 1000);
+            const ranked = ethers.keccak256(
+                ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [[agent.address]])
+            );
+            const domain = EIP712_DOMAIN(await auditLog.getAddress());
+            decisionDigest = ethers.TypedDataEncoder.hash(
+                domain, ROUTER_TYPES,
+                { taskHash, rankedAgents: ranked, topAgent: agent.address, timestamp: ts }
+            );
+            // 父作用域无 router signer，使用 owner 充当 router
+            decisionSig = await owner.signTypedData(
+                domain, ROUTER_TYPES,
+                { taskHash, rankedAgents: ranked, topAgent: agent.address, timestamp: ts }
+            );
+            const tx = await auditLog.logScheduleWithDecision(
+                requester.address, agent.address, taskCommitment,
+                0, // QUALIFIED
+                owner.address, decisionDigest, decisionSig
+            );
+            const r = await tx.wait();
+            recordId = Number(r.logs[0].topics[1]);
+        });
+
+        it("Should keep taskDescription secret before reveal (no plaintext on chain)", async function () {
+            const revealed = await auditLog.getRevealedTask(recordId);
+            expect(revealed.revealed).to.equal(false);
+            expect(revealed.taskDescription).to.equal("");
+            // 合约中只持有 32 字节 commitment
+            const rec = await auditLog.records(recordId);
+            expect(rec.taskCommitment).to.equal(taskCommitment);
+        });
+
+        it("Should accept valid reveal: keccak256(task || salt) == commitment", async function () {
+            await expect(auditLog.revealTask(recordId, TASK, SALT))
+                .to.emit(auditLog, "TaskRevealed");
+            const revealed = await auditLog.getRevealedTask(recordId);
+            expect(revealed.revealed).to.equal(true);
+            expect(revealed.taskDescription).to.equal(TASK);
+        });
+
+        it("Should reject reveal with wrong task description", async function () {
+            await expect(
+                auditLog.revealTask(recordId, "篡改后的内容", SALT)
+            ).to.be.revertedWith("Commitment mismatch");
+        });
+
+        it("Should reject reveal with wrong salt", async function () {
+            const wrongSalt = ethers.hexlify(ethers.randomBytes(32));
+            await expect(
+                auditLog.revealTask(recordId, TASK, wrongSalt)
+            ).to.be.revertedWith("Commitment mismatch");
+        });
+
+        it("Should reject double reveal", async function () {
+            await auditLog.revealTask(recordId, TASK, SALT);
+            await expect(
+                auditLog.revealTask(recordId, TASK, SALT)
+            ).to.be.revertedWith("Already revealed");
+        });
+
+        it("computeCommitment() should be consistent off-chain and on-chain", async function () {
+            const onchain = await auditLog.computeCommitment(TASK, SALT);
+            const offchain = ethers.keccak256(
+                ethers.solidityPacked(["string", "bytes32"], [TASK, SALT])
+            );
+            expect(onchain).to.equal(offchain);
+        });
+    });
 });

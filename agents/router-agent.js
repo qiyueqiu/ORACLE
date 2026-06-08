@@ -19,7 +19,7 @@ class RouterAgent {
   }
 
   /**
-   * 步骤 1: 意图解析
+   * 步骤 1: 意图解析（论文 parseIntent）
    */
   async parseIntent(taskDescription) {
     const prompt = `分析任务，返回JSON：{"intent":"意图","requiredQualification":"code_review/data_analysis/translation/research/creative/weather/content/calc","complexity":"simple/medium/complex","priority":"speed/quality/balance"}\n\n可用Agent类型: code_review(代码审查), data_analysis(数据分析), translation(翻译), research(研究), creative(创意写作), weather(天气), content(内容创作), calc(计算)\n\n任务：${taskDescription}`;
@@ -93,7 +93,7 @@ class RouterAgent {
   }
 
   /**
-   * 步骤 2: 获取候选 Agent 列表
+   * 步骤 2: 获取候选 Agent 列表（论文 fetchCandidates）
    */
   async getCandidateAgents(requiredQualification) {
     const candidates = [];
@@ -126,7 +126,7 @@ class RouterAgent {
   }
 
   /**
-   * 步骤 3: LLM 评估候选 Agent（带 fallback）
+   * 步骤 3: LLM 评估候选 Agent（论文 evaluateCandidates，含 Fallback）
    */
   async evaluateCandidates(candidates, intent, requiredQualification) {
     // 精简候选信息
@@ -134,7 +134,7 @@ class RouterAgent {
       `#${i + 1} ${c.did} | 资质:${c.qualification} | 信誉:${c.avgRating}/5 (${c.ratingCount}评)`
     ).join('\n');
 
-    const prompt = `任务: ${intent.intent}\n资质要求: ${requiredQualification}\n\nAgent列表:\n${candidatesSummary}\n\n评分(资质匹配60%+信誉40%)，返回JSON: {"rankings":[{"index":0,"score":85,"reason":"..."}],"decision":"选择理由"}`;
+    const prompt = `任务: ${intent.intent}\n资质要求: ${requiredQualification}\n\nAgent列表:\n${candidatesSummary}\n\n评分规则（与论文公式 (3) 一致）: score = 0.6*q + 0.4*r_norm，q∈{60,40}（资质匹配 60，否则 40），r_norm = avgRating*8（0-5 → 0-40），满分 100。\n返回JSON: {"rankings":[{"index":0,"score":85,"reason":"..."}],"decision":"选择理由"}`;
 
     const stepId = this.generateStepId();
     const startTime = Date.now();
@@ -188,11 +188,13 @@ class RouterAgent {
       };
       this.executionLog.push(logEntry);
 
-      // 规则评分：资质匹配得 60 分基准，信誉 * 8
+      // 规则评分（改造 A3）：与论文公式 (3) 严格一致
+      // score = 0.6 * q + 0.4 * r_norm，其中 q ∈ {60, 40}，r_norm = avgRating * 8（0-5 星 → 0-40）
+      // 满分 100。LLM 路径与 Fallback 路径共享同一线性权重函数。
       candidates.forEach((c, i) => {
-        const qualMatch = c.qualification === requiredQualification ? 60 : 40;
-        const repScore = c.avgRating * 8;
-        c.score = qualMatch + repScore;
+        const q = c.qualification === requiredQualification ? 60 : 40;
+        const rNorm = c.avgRating * 8;
+        c.score = 0.6 * q + 0.4 * rNorm;
         c.reason = c.qualification === requiredQualification ? '资质完全匹配' : '资质部分匹配';
       });
       candidates.sort((a, b) => b.score - a.score);
@@ -202,7 +204,7 @@ class RouterAgent {
   }
 
   /**
-   * 步骤 4: 做出最终决策
+   * 步骤 4: 做出最终决策（论文 selectBest）
    */
   async makeDecision(candidates, decision) {
     candidates.sort((a, b) => b.score - a.score);
@@ -263,6 +265,18 @@ class RouterAgent {
 
   generateStepId() {
     return `0x${Buffer.from(`${Date.now()}-${Math.random()}`).toString('hex').slice(0, 64)}`;
+  }
+
+  // ===== 改造 B4：论文 4 步管线别名 =====
+  // 论文（第 3.3 节）使用 parseIntent / fetchCandidates / evaluateCandidates / selectBest
+  // 代码历史上使用 parseIntent / getCandidateAgents / evaluateCandidates / makeDecision
+  // 为了让代码与论文一一对应，同时不破坏现有测试，下面提供论文同名别名。
+  async fetchCandidates(requiredQualification) {
+    return this.getCandidateAgents(requiredQualification);
+  }
+
+  async selectBest(candidates, decision) {
+    return this.makeDecision(candidates, decision);
   }
 }
 

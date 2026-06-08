@@ -21,6 +21,15 @@ module.exports = {
       optimizer: { enabled: true, runs: 200 },
     },
   },
+  // gas-reporter：用于论文 5.3 节性能数据复现（A1）
+  // 默认关闭，避免拖慢日常开发；通过 REPORT_GAS=true 打开。
+  gasReporter: {
+    enabled: process.env.REPORT_GAS === "true",
+    currency: "USD",
+    outputFile: "paper/gas-report.txt",
+    noColors: true,
+    excludeContracts: ["MockERC20"],
+  },
   networks: {
     // 本地
     localhost: { url: "http://localhost:8545", chainId: 31337 },

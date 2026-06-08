@@ -59,6 +59,11 @@ contract AuditLog is Ownable {
     // commitment -> recordId（防 commitment 重用）
     mapping(bytes32 => uint256) public commitmentToRecord;
 
+    // 改造 A4：commit-reveal 第二阶段。recordId -> 揭示后的明文（链下任务原文）
+    // 揭示成功后链上才有 taskDescription；未揭示前合约仅持有 32-byte commitment。
+    mapping(uint256 => string) public revealedTasks;
+    mapping(uint256 => bool) public taskRevealed;
+
     uint256 public recordCount;
     uint256 public nextRecordId = 1;
     address public agentDID;  // 用于读取 Agent 公钥做 ecrecover
@@ -84,6 +89,14 @@ contract AuditLog is Ownable {
         uint256 indexed recordId,
         address indexed routerSigner,
         bytes32 decisionDigest
+    );
+
+    // 改造 A4：commit-reveal 第二阶段（揭示）事件
+    event TaskRevealed(
+        uint256 indexed recordId,
+        address indexed revealer,
+        bytes32 taskCommitment,
+        string taskDescription
     );
 
     constructor() Ownable(msg.sender) {}
@@ -208,6 +221,44 @@ contract AuditLog is Ownable {
         require(records[recordId].reputationRating == 0, "Already rated");
         records[recordId].reputationRating = rating;
         emit RatingSubmitted(recordId, rating);
+    }
+
+    // ===== 改造 A4：commit-reveal 第二阶段（揭示）=====
+    // 调用方提供原文 + salt，合约验证 keccak256(taskDescription || salt) == taskCommitment
+    // 成功后将原文写入 revealedTasks，供事后审计/合规读取。
+    // 任何人都可揭示（揭示本身需要持有原文，不构成新的信任假设）。
+    function revealTask(
+        uint256 recordId,
+        string calldata taskDescription,
+        bytes32 salt
+    ) external {
+        require(records[recordId].exists, "Record not found");
+        require(!taskRevealed[recordId], "Already revealed");
+        bytes32 expected = records[recordId].taskCommitment;
+        require(expected != bytes32(0), "No commitment");
+        bytes32 computed = keccak256(abi.encodePacked(taskDescription, salt));
+        require(computed == expected, "Commitment mismatch");
+
+        revealedTasks[recordId] = taskDescription;
+        taskRevealed[recordId] = true;
+        emit TaskRevealed(recordId, msg.sender, expected, taskDescription);
+    }
+
+    function getRevealedTask(uint256 recordId)
+        external
+        view
+        returns (bool revealed, string memory taskDescription)
+    {
+        return (taskRevealed[recordId], revealedTasks[recordId]);
+    }
+
+    // 工具函数：链下生成 commitment 时可保持一致
+    function computeCommitment(string calldata taskDescription, bytes32 salt)
+        external
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(taskDescription, salt));
     }
 
     // ===== 读取 =====

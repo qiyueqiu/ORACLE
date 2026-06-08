@@ -81,6 +81,10 @@ export default function Dashboard() {
     loadAgents();
     const off = onWalletChange(s => setWalletAddress(s?.address || null));
     setWalletAddress(getWalletState()?.address || null);
+    // 本地开发（chainId 31337）无 MetaMask 时自动 fallback，无需用户点击连接
+    if (!getWalletState()) {
+      connectWallet().then(s => setWalletAddress(s.address)).catch(() => {});
+    }
     return off;
   }, []);
 

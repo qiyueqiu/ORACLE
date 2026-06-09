@@ -4,9 +4,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title AsbCCIPSender（M3 改造 11 - 跨链同步）
+ * @title OracleCCIPSender（M3 改造 11 - 跨链同步）
  * @notice 通过 Chainlink CCIP 把 AuditLog 调度记录跨链同步到目标链
- * 真实部署需引入 chainlink 合约库（src imports ccip/AsbCCIP.sol:11 for detail）
+ * 真实部署需引入 chainlink 合约库（src imports ccip/OracleCCIP.sol:11 for detail）
  *
  * ⚠ 论文 A6 注意事项：当前 ccipSend() **不调用真实 Chainlink CCIP router**，
  *   仅编码 payload 并用 keccak256(payload) 作为 messageId 返回。
@@ -14,8 +14,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   `IRouterClient(ccipRouter).ccipSend(destChainSelector, message)` 真实调用。
  *
  * 流程（生产版）：
- *   1. 源链 AsbCCIPSender.ccipSend(destChainSelector, recordId) 编码 ScheduleRecord
- *   2. CCIP 消息路由到目标链 AsbCCIPReceiver
+ *   1. 源链 OracleCCIPSender.ccipSend(destChainSelector, recordId) 编码 ScheduleRecord
+ *   2. CCIP 消息路由到目标链 OracleCCIPReceiver
  *   3. 目标链 ccipReceive 解码 → 在镜像合约上 replay ScheduleLogged
  *
  * 当前实现（M3 阶段）：
@@ -23,7 +23,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *   - 不引入 Chainlink 完整库（避免依赖冲突）
  *   - 生产部署需引入 chainlink 合约库并补完实际 CCIP router 集成
  */
-contract AsbCCIPSender is Ownable {
+contract OracleCCIPSender is Ownable {
     address public ccipRouter;        // Chainlink CCIP Router on source chain
     address public auditLog;          // 源链 AuditLog
     uint64 public destChainSelector;  // 目标链 selector
@@ -70,11 +70,11 @@ contract AsbCCIPSender is Ownable {
 }
 
 /**
- * @title AsbCCIPReceiver（M3 改造 11 - 跨链接收）
+ * @title OracleCCIPReceiver（M3 改造 11 - 跨链接收）
  * @notice 在目标链 replay 源链的 ScheduleRecord
  */
-contract AsbCCIPReceiver is Ownable {
-    address public sourceChainSender;  // 源链 AsbCCIPSender 地址
+contract OracleCCIPReceiver is Ownable {
+    address public sourceChainSender;  // 源链 OracleCCIPSender 地址
     address public mirrorAuditLog;     // 目标链镜像 AuditLog
 
     event CCIPRecordReplayed(uint256 indexed recordId, bytes32 taskCommitment, address targetAgent);

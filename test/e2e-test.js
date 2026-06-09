@@ -1,5 +1,5 @@
 /**
- * ASB E2E 多场景测试（Playwright）
+ * ORACLE E2E 多场景测试（Playwright）
  *
  * 场景：
  *   1. 完整流程：注册 Agent → 调度任务 → 审计验证
@@ -55,7 +55,7 @@ async function runScenario(name, fn) {
 }
 
 async function main() {
-    console.log('🚀 ASB E2E 多场景测试\n');
+    console.log('🚀 ORACLE E2E 多场景测试\n');
 
     const provider = new ethers.JsonRpcProvider('http://localhost:8545');
     const signer = await provider.getSigner();

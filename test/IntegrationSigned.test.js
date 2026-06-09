@@ -13,7 +13,7 @@ const { ethers } = require("hardhat");
 describe("Integration: signed audit flow (改造 1+2+3)", function () {
     const CHAIN_ID = 31337;
     const EIP712_DOMAIN_AUDIT = (verifyingContract) => ({
-        name: "ASB Agent Bus",
+        name: "ORACLE Agent Bus",
         version: "1",
         chainId: CHAIN_ID,
         verifyingContract,

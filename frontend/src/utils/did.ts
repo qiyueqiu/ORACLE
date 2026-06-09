@@ -23,7 +23,7 @@ export function generateNullifier(did: string, secret: string): string {
 // Generate a random DID (for demo purposes)
 export function generateDID(name: string): string {
   const random = Math.random().toString(36).substring(2, 10);
-  return `did:asb:${name}-${random}`;
+  return `did:oracle:${name}-${random}`;
 }
 
 // Generate a random secret (for demo purposes)

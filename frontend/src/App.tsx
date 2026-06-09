@@ -37,8 +37,8 @@ export default function App() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="logo-icon">ASB</div>
-          <h1>ASB Blockchain</h1>
+          <div className="logo-icon">OR</div>
+          <h1>ORACLE</h1>
         </div>
 
         <nav className="sidebar-nav">

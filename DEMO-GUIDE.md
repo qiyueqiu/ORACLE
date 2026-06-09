@@ -1,9 +1,9 @@
-# ASB + Blockchain Demo — 演示指南
+# ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution — 演示指南
 
 ## 一键运行端到端演示
 
 ```bash
-cd /home/qiqi/workspace/asb-blockchain-demo
+cd /home/qiqi/workspace/oracle
 bash start-and-test.sh
 ```
 
@@ -16,7 +16,7 @@ bash start-and-test.sh
 ### 1. 启动服务
 
 ```bash
-cd /home/qiqi/workspace/asb-blockchain-demo
+cd /home/qiqi/workspace/oracle
 
 # 终端 1: 启动区块链节点
 npx hardhat node

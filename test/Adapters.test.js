@@ -6,7 +6,7 @@ describe("M2/M3 Storage & Privacy Adapters (mock mode)", function () {
     describe("IPFSClient (mock)", function () {
         it("Should upload and fetch content", async function () {
             const ipfs = new IPFSClient({ mode: "mock" });
-            const content = "Hello, ASB blockchain world!";
+            const content = "Hello, ORACLE blockchain world!";
             const { cid, size } = await ipfs.upload(content);
             expect(cid).to.match(/^mock-[a-f0-9]{32}$/);
             expect(size).to.equal(Buffer.byteLength(content));

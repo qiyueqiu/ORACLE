@@ -1,7 +1,7 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("ASBGovernor (M3 改造 8)", function () {
+describe("OracleGovernor (M3 改造 8)", function () {
     let token, governor;
     let owner, voter1, voter2, voter3, target;
 
@@ -18,8 +18,8 @@ describe("ASBGovernor (M3 改造 8)", function () {
         await token.mint(voter2.address, ethers.parseEther("500"));
         await token.mint(voter3.address, ethers.parseEther("200"));
 
-        const ASBGovernor = await ethers.getContractFactory("ASBGovernor");
-        governor = await ASBGovernor.deploy(await token.getAddress());
+        const OracleGovernor = await ethers.getContractFactory("OracleGovernor");
+        governor = await OracleGovernor.deploy(await token.getAddress());
         await governor.waitForDeployment();
     });
 
@@ -37,7 +37,7 @@ describe("ASBGovernor (M3 改造 8)", function () {
         const emptyToken = await Token.deploy();
         await emptyToken.waitForDeployment();
         // 部署 Governor 时用空 token
-        const Gov2 = await ethers.getContractFactory("ASBGovernor");
+        const Gov2 = await ethers.getContractFactory("OracleGovernor");
         const gov2 = await Gov2.deploy(await emptyToken.getAddress());
         await gov2.waitForDeployment();
         const data = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);

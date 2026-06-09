@@ -1,5 +1,5 @@
 /**
- * ASB 统一错误处理 + 日志（M2 N7）
+ * ORACLE 统一错误处理 + 日志（M2 N7）
  *
  * 原则：
  *   - 不静默吞错
@@ -24,7 +24,7 @@ function emit(level, component, event, data) {
     const out = {
         ts: ts(),
         level,
-        component: component || 'asb',
+        component: component || 'oracle',
         event,
         ...data,
     };

@@ -1,10 +1,10 @@
 #!/bin/bash
-# ASB + Blockchain Demo — 一键启动 & 有头浏览器端到端演示
+# ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution — 一键启动 & 有头浏览器端到端演示
 # 用法: bash start-and-test.sh
 
 set -e
 
-PROJECT_ROOT="/home/qiqi/workspace/asb-blockchain-demo"
+PROJECT_ROOT="/home/qiqi/workspace/oracle"
 LOG_DIR="$PROJECT_ROOT/logs"
 SCREENSHOT_DIR="$PROJECT_ROOT/e2e-screenshots"
 mkdir -p "$LOG_DIR" "$SCREENSHOT_DIR"

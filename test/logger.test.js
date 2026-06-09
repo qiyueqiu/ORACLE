@@ -43,11 +43,11 @@ describe("agents/logger", function () {
             expect(parsed.ts).to.be.a("string");
         });
 
-        it("Should default component to 'asb'", function () {
+        it("Should default component to 'oracle'", function () {
             const log = child();
             log.info("x");
             const parsed = JSON.parse(stdoutBuf.join("").trim());
-            expect(parsed.component).to.equal("asb");
+            expect(parsed.component).to.equal("oracle");
         });
     });
 

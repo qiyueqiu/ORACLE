@@ -151,7 +151,7 @@ contract AgentDID {
     function domainSeparator() public view returns (bytes32) {
         return keccak256(abi.encode(
             EIP712_DOMAIN_TYPEHASH,
-            keccak256(bytes("ASB AgentDID")),
+            keccak256(bytes("ORACLE AgentDID")),
             keccak256(bytes("1")),
             block.chainid,
             address(this)

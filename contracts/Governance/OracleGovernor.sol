@@ -5,11 +5,11 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title ASBGovernor（M3 改造 8 - 链上治理）
+ * @title OracleGovernor（M3 改造 8 - 链上治理）
  * @notice 简化版 Governor + 治理代币 + Timelock
  *
  * 范围（M3 阶段）：
- *   - 治理代币：ASBToken (ERC20Votes 简化版，按 stake 1:1 发放给 Router)
+ *   - 治理代币：OracleToken (ERC20Votes 简化版，按 stake 1:1 发放给 Router)
  *   - 提案：参数调整（阈值、权重、惩罚比例）、Router 白名单增删、合约升级授权
  *   - 投票：持币量加权
  *   - Timelock：执行延迟 24h
@@ -20,7 +20,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   - 改造理由：完整 OZ Governor 与 OZ ERC20Votes 在当前依赖树中冲突
  *   - 未来工作（见论文 7.2 节）：平滑切换到 OZ Governor Bravo/Alpha
  */
-contract ASBGovernor is Ownable {
+contract OracleGovernor is Ownable {
     struct Proposal {
         uint256 id;
         address proposer;

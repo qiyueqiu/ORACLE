@@ -5,7 +5,7 @@ describe("AuditLog Contract", function () {
     let auditLog;
     let owner, requester, agent;
     const EIP712_DOMAIN = (verifyingContract) => ({
-        name: "ASB AuditLog",
+        name: "ORACLE AuditLog",
         version: "1",
         chainId: 31337,
         verifyingContract
@@ -188,7 +188,7 @@ describe("AuditLog Contract", function () {
             const ts = 1700000000;
             const value = { recordId, result, timestamp: ts };
             const resultDigest = ethers.TypedDataEncoder.hash(
-                { name: "ASB AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() },
+                { name: "ORACLE AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() },
                 { Result: [
                     { name: "recordId", type: "uint256" },
                     { name: "result", type: "string" },
@@ -197,7 +197,7 @@ describe("AuditLog Contract", function () {
                 value
             );
             const sig = await wrong.signTypedData(
-                { name: "ASB AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() },
+                { name: "ORACLE AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() },
                 { Result: [
                     { name: "recordId", type: "uint256" },
                     { name: "result", type: "string" },
@@ -214,7 +214,7 @@ describe("AuditLog Contract", function () {
             const result = "completed";
             const ts = 1700000000;
             const value = { recordId, result, timestamp: ts };
-            const domain = { name: "ASB AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() };
+            const domain = { name: "ORACLE AuditLog", version: "1", chainId: 31337, verifyingContract: await auditLog.getAddress() };
             const types = { Result: [
                 { name: "recordId", type: "uint256" },
                 { name: "result", type: "string" },

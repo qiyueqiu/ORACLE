@@ -1,4 +1,4 @@
-// ASB Subgraph Mapping（M2 改造 10）
+// ORACLE Subgraph Mapping（M2 改造 10）
 // 处理 AuditLog 事件 → 写入 GraphQL 可查询实体
 
 import { BigInt, Bytes, log } from "@graphprotocol/graph-ts";

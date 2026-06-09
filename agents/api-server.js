@@ -1,5 +1,5 @@
 /**
- * ASB Agent API 服务（M1 改造版）
+ * ORACLE Agent API 服务（M1 改造版）
  *
  * 集成：
  *  - dotenv 加载（消除硬编码密钥）
@@ -49,7 +49,7 @@ const CONFIG = {
   ROUTER_SIGNER_PK: required('ROUTER_SIGNER_PRIVATE_KEY'),
   REPUTATION_SIGNER_PK: required('REPUTATION_SIGNER_PRIVATE_KEY'),
   WORKER_DEMO_PK: required('WORKER_DEMO_PRIVATE_KEY'),
-  EIP712_DOMAIN_NAME: process.env.EIP712_DOMAIN_NAME || 'ASB Agent Bus',
+  EIP712_DOMAIN_NAME: process.env.EIP712_DOMAIN_NAME || 'ORACLE Agent Bus',
   EIP712_DOMAIN_VERSION: process.env.EIP712_DOMAIN_VERSION || '1',
   ACCESS_KEYS: (process.env.API_ACCESS_KEYS || '').split(',').map(s => s.trim()).filter(Boolean),
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
@@ -510,7 +510,7 @@ app.post('/api/dispatch', async (req, res) => {
 });
 
 app.listen(CONFIG.PORT, () => {
-  console.log(`🚀 ASB Agent API 服务运行在 http://localhost:${CONFIG.PORT}`);
+  console.log(`🚀 ORACLE Agent API 服务运行在 http://localhost:${CONFIG.PORT}`);
   console.log(`📡 API 端点:`);
   console.log(`   POST /api/dispatch/stream - 流式执行 (含信誉分析)`);
   console.log(`   POST /api/dispatch - 阻塞式执行`);

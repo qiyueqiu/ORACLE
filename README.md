@@ -1,6 +1,8 @@
-# ASB + Blockchain Demo
+# ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution
 
-ASB（Agent Service Bus）与区块链结合的 demo，聚焦**信任机制**和**审计追溯**。
+ORACLE 是一个将 LLM 驱动的 Agent 调度与链上信任、审计机制相结合的系统，聚焦**信任机制**和**审计追溯**。
+
+> 命名：**ORACLE** = **O**n-chain **R**eputation & **A**udit for **C**oordinated **L**LM-Agent **E**xecution。同时呼应区块链领域中"预言机（oracle）"作为链上链下桥梁的语义——正对应本系统中 LLM-Agent 与链上信任层之间的桥接定位。
 
 ## 技术栈
 
@@ -11,7 +13,7 @@ ASB（Agent Service Bus）与区块链结合的 demo，聚焦**信任机制**和
 ## 项目结构
 
 ```
-asb-blockchain-demo/
+oracle/
 ├── contracts/           # Solidity 智能合约
 │   ├── AgentDID.sol     # Agent 去中心化身份 + 资质验证
 │   ├── AuditLog.sol     # 调度决策审计追溯
@@ -34,7 +36,7 @@ asb-blockchain-demo/
 ### 1. 启动 Hardhat 本地网络
 
 ```bash
-cd asb-blockchain-demo
+cd oracle
 npm install
 npx hardhat node
 ```
@@ -44,14 +46,14 @@ npx hardhat node
 新开终端：
 
 ```bash
-cd asb-blockchain-demo
+cd oracle
 npx hardhat run scripts/deploy.js --network localhost
 ```
 
 ### 3. 启动前端
 
 ```bash
-cd asb-blockchain-demo/frontend
+cd oracle/frontend
 npm install
 npm run dev
 ```

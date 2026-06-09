@@ -1,7 +1,7 @@
 {
-  "name": "asb-blockchain-demo",
+  "name": "oracle-blockchain-demo",
   "version": "1.0.0",
-  "description": "ASB + Blockchain Demo with Agent DID, Audit Log, and Reputation System",
+  "description": "ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution",
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",

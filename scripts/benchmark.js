@@ -23,7 +23,7 @@ function percentile(sortedArr, p) {
 
 async function main() {
   const ethers = hre.ethers;
-  console.log(`🚀 ASB benchmark: SAMPLE_N=${SAMPLE_N}`);
+  console.log(`🚀 ORACLE benchmark: SAMPLE_N=${SAMPLE_N}`);
   const [deployer, router, worker, requester] = await ethers.getSigners();
 
   // 1) Deploy
@@ -43,7 +43,7 @@ async function main() {
     ethers.solidityPacked(["bytes32", "bytes32"], [nullifier, secretHash])
   );
   await did.connect(worker).registerAgentWithPubKey(
-    "did:asb:worker:bench",
+    "did:oracle:worker:bench",
     commitment,
     "qa",
     worker.address
@@ -51,7 +51,7 @@ async function main() {
 
   // 3) EIP-712 domain & types
   const domain = {
-    name: "ASB Agent Bus",
+    name: "ORACLE Agent Bus",
     version: "1",
     chainId: (await ethers.provider.getNetwork()).chainId,
   };

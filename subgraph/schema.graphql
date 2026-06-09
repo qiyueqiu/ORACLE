@@ -1,4 +1,4 @@
-# ASB Subgraph Schema
+# ORACLE Subgraph Schema
 
 type Agent @entity {
   id: ID!                        # address

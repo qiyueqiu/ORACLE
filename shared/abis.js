@@ -1,5 +1,5 @@
 /**
- * ASB 后端共享 ABI（单一来源）
+ * ORACLE 后端共享 ABI（单一来源）
  * 任何后端服务（api-server / router-agent / worker-agent / reputation-analyzer）均从此模块加载。
  * 修改合约后必须同步更新本文件，并删除各文件中的 inline ABI。
  */
@@ -132,8 +132,8 @@ const RouterRegistryABI = [
   'event ConsensusReached(uint256 indexed recordId, bytes32 decisionDigest, uint256 votes)',
 ];
 
-// ===== ASBGovernor ABI =====
-const ASBGovernorABI = [
+// ===== OracleGovernor ABI =====
+const OracleGovernorABI = [
   'function propose(address target, bytes calldata data, string calldata description) external returns (uint256)',
   'function castVote(uint256 proposalId, bool support) external',
   'function queue(uint256 proposalId) external',
@@ -155,12 +155,12 @@ const ALL_ABIS = {
   AgentStake: AgentStakeABI,
   PaymentEscrow: PaymentEscrowABI,
   RouterRegistry: RouterRegistryABI,
-  ASBGovernor: ASBGovernorABI,
+  OracleGovernor: OracleGovernorABI,
 };
 
 module.exports = {
   AgentDIDABI, AuditLogABI, ReputationABI,
   MockERC20ABI, AgentStakeABI, PaymentEscrowABI,
-  RouterRegistryABI, ASBGovernorABI,
+  RouterRegistryABI, OracleGovernorABI,
   ALL_ABIS,
 };

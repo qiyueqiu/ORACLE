@@ -137,7 +137,7 @@ describe("AgentDID Contract", function () {
 
         async function domainFor(contract) {
             return {
-                name: "ASB AgentDID",
+                name: "ORACLE AgentDID",
                 version: "1",
                 chainId: 31337,
                 verifyingContract: await contract.getAddress()

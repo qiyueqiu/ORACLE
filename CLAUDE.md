@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ASB (Agent Service Bus) + Blockchain Demo — a demo combining LLM-driven agent routing with on-chain trust and audit mechanisms. Three Solidity contracts provide DID identity, audit logging, and reputation scoring. A Node.js API server hosts Router/Worker agents that use SiliconFlow LLMs. A React frontend provides the UI.
+ORACLE (On-chain Reputation & Audit for Coordinated LLM-Agent Execution) — a demo combining LLM-driven agent routing with on-chain trust and audit mechanisms. Three Solidity contracts provide DID identity, audit logging, and reputation scoring. A Node.js API server hosts Router/Worker agents that use SiliconFlow LLMs. A React frontend provides the UI.
 
 ## Commands
 

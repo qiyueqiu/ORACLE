@@ -2,7 +2,7 @@ const hre = require('hardhat');
 const { ethers } = hre;
 
 function generateDID(name) {
-  return `did:asb:${name}`;
+  return `did:oracle:${name}`;
 }
 
 function generateSecret() {

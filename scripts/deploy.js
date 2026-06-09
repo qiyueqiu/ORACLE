@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 /**
- * ASB 合约部署脚本（M2 N8：多网络）
+ * ORACLE 合约部署脚本（M2 N8：多网络）
  *
  * 部署：AgentDID / AuditLog / Reputation / AgentStake / PaymentEscrow / MockERC20
  * 关联：AuditLog.setAgentDID；AgentStake & PaymentEscrow.setAuditLog
@@ -11,7 +11,7 @@ const path = require("path");
  */
 async function main() {
     const network = hre.network.name;
-    console.log(`🚀 Deploying ASB contracts to network: ${network}`);
+    console.log(`🚀 Deploying ORACLE contracts to network: ${network}`);
 
     const [deployer] = await hre.ethers.getSigners();
     console.log(`Deployer: ${await deployer.getAddress()}`);

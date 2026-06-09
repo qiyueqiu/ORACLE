@@ -28,10 +28,11 @@ oracle/
 │   ├── AuditLog.sol        # 调度决策审计追溯
 │   └── Reputation.sol      # 链上信誉分管理
 ├── agents/                 # Node.js 后端 Agent 层
-│   ├── api-server.js       # Express API：/api/dispatch（阻塞）+ /stream（SSE）
-│   ├── router-agent.js     # Router：意图解析 → 候选筛选 → LLM 评分 → 选择
-│   ├── worker-agent.js     # Worker：链式思考执行任务，按复杂度选模型
-│   └── siliconflow-client.js  # SiliconFlow LLM API 封装
+│   ├── api-server.js        # Express API：调度 / 评分 / 信誉 等端点（含鉴权 + 限流）
+│   ├── router-agent.js      # Router：意图解析 → 候选筛选 → LLM 评分 → 选择
+│   ├── worker-agent.js      # Worker：链式思考执行任务，按复杂度选模型
+│   ├── reputation-analyzer.js  # 百分制信誉评分分析（0-100）
+│   └── siliconflow-client.js   # SiliconFlow LLM API 封装
 ├── frontend/               # React 前端
 │   └── src/
 │       ├── contracts/abis.ts   # 合约 ABI 绑定
@@ -71,7 +72,7 @@ npm install
 node api-server.js          # Express API on :3001
 ```
 
-> 需配置 SiliconFlow API Key：设置环境变量 `SILICONFLOW_API_KEY`（参考 `.env.example`）。
+> 需配置环境变量（参考 `.env.example`）：`SILICONFLOW_API_KEY`（LLM 调用，必需）、`ROUTER_SIGNER_PRIVATE_KEY` / `REPUTATION_SIGNER_PRIVATE_KEY`（上链签名）、`API_ACCESS_KEYS`（API 鉴权，可选）。
 
 ### 4. 启动前端
 
@@ -87,8 +88,8 @@ npm run dev                 # Vite dev server on :5173
 
 1. **Dashboard** → 注册 Agent：`AgentDID.registerAgent()` 上链（DID + 资质承诺）
 2. **Dispatch** → 提交任务：前端调用 `/api/dispatch`
-3. **Router Agent** → 读取链上 Agent 列表与信誉分，LLM 评分（60% 资质匹配 + 40% 信誉），选出最优 Agent
-4. **Worker Agent** → LLM 链式思考执行任务，返回结果与推理过程
+3. **Router Agent** → 读取链上 Agent 列表与信誉分，LLM 评分（`score = 0.6·q + 0.4·rNorm`，q∈{60,40} 为资质匹配度，rNorm 为信誉归一化），选出最优 Agent；LLM 失败时回退到同权重的规则匹配
+4. **Worker Agent** → LLM 链式思考执行任务（按复杂度选模型：长文/含「分析·计算·创作」→ DeepSeek-V3，否则 Qwen2.5-7B），返回结果与推理过程
 5. **API Server** → 将调度决策与执行结果写入 `AuditLog` 合约
 6. **Audit Log** → 前端直接从链上读取完整调度记录（transactionHash 可验证）
 
@@ -108,9 +109,25 @@ npm run dev                 # Vite dev server on :5173
 
 ### 信誉系统（Reputation）
 
-- 任务完成后调用方评分（1–5）
-- `isReliable()` 要求平均分 ≥ 3 且评分数 ≥ 3
-- Router 调度决策查询链上信誉分作为参考，含降权惩罚机制
+- 任务完成后调用方评分，百分制（`MIN_RATING=0` ~ `MAX_RATING=100`）
+- 加权平均：评分者按自身信誉的平方根加权（`weight = sqrt(raterAvg)`），抑制低信誉刷分
+- `isReliable()` 要求加权平均分 ≥ 60 且评分数 ≥ 3；另有 `timeDecayed()` 时间衰减与 `isReliableWeighted()` 变体
+- Router 调度决策查询链上信誉分作为参考，含降权惩罚（`penalty`）机制
+
+## API 端点
+
+后端 Express 服务（`:3001`）。`/api/dispatch`、`/api/dispatch/stream`、`/api/user-rating` 受 `x-api-key` 鉴权 + 限流保护（通过 `API_ACCESS_KEYS` 配置；为空则关闭鉴权）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/dispatch` | 阻塞式任务调度执行 |
+| POST | `/api/dispatch/stream` | 流式执行（SSE，含信誉分析） |
+| POST | `/api/user-rating` | 用户对任务结果评分 |
+| GET | `/api/reputation/summary` | 链上信誉概况 |
+| GET | `/api/scoring-dimensions` | 评分维度说明 |
+| GET | `/api/agent-types` | Agent 类型列表 |
+| GET | `/api/dispatch/history` | 调度历史 |
+| GET | `/api/health` | 健康检查 |
 
 ## 测试
 

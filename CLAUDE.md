@@ -33,14 +33,14 @@ node test/e2e-test.js                   # Playwright-driven full flow test (from
 
 - **AgentDID** — Agent identity with ZKP-simulated credential verification. Registration creates a `commitment = keccak256(nullifier, secretHash)`. Verification opens the commitment with nullifier+secretHash; nullifier prevents reuse.
 - **AuditLog** — Immutable dispatch records with `ScheduleRecord` struct tracking requester, target agent, decision reason, execution status, and ratings. Supports queries by agent, requester, and time range.
-- **Reputation** — 1–5 rating system per agent. `isReliable()` requires avg ≥ 3 with ≥ 3 ratings. Includes penalty mechanism.
+- **Reputation** — 0–100 (percentile) rating system per agent. Ratings are weight-averaged (`weight = sqrt(raterAvg)`). `isReliable()` requires weighted avg ≥ 60 (`RELIABLE_THRESHOLD`) with ≥ 3 ratings (`MIN_RATINGS_FOR_RELIABLE`). Also exposes `timeDecayed()` and `isReliableWeighted()`. Includes penalty mechanism.
 
 Deploy writes contract addresses to `frontend/src/contracts/addresses.json`. Frontend ABI bindings are hand-maintained in `frontend/src/contracts/abis.ts`.
 
 ### Agent Backend (Node.js, Express)
 
-- **api-server.js** — Express server with two endpoints: `POST /api/dispatch` (blocking) and `POST /api/dispatch/stream` (SSE). Orchestrates the full flow: route → execute → log to chain.
-- **RouterAgent** — LLM-driven 4-step pipeline: parse intent → fetch candidate agents from chain → evaluate candidates via LLM scoring (60% qualification match + 40% reputation) → select best. Falls back to rule-based matching if LLM fails.
+- **api-server.js** — Express server exposing dispatch (`POST /api/dispatch` blocking, `POST /api/dispatch/stream` SSE), rating, reputation, and health endpoints. Dispatch/rating routes are guarded by `x-api-key` auth + rate limiting (via `API_ACCESS_KEYS`). Orchestrates the full flow: route → execute → log to chain.
+- **RouterAgent** — LLM-driven 4-step pipeline: parse intent → fetch candidate agents from chain → evaluate via LLM scoring (`score = 0.6·q + 0.4·rNorm`, q∈{60,40} qualification match, rNorm normalized reputation) → select best. Falls back to same-weight rule-based matching if LLM fails.
 - **WorkerAgent** — Executes tasks via LLM with chain-of-thought prompting. Selects model by task complexity (Qwen2.5-7B for simple, DeepSeek-V3 for complex).
 - **SiliconFlowClient** — Wrapper for SiliconFlow API (`api.siliconflow.cn/v1`). Supports plain chat and structured JSON output.
 

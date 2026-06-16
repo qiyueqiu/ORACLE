@@ -49,11 +49,12 @@ async function main() {
     worker.address
   );
 
-  // 3) EIP-712 domain & types
+  // 3) EIP-712 domain & types（P1-C2：必须与 AuditLog.domainSeparator() 一致）
   const domain = {
-    name: "ORACLE Agent Bus",
+    name: "ORACLE AuditLog",
     version: "1",
     chainId: (await ethers.provider.getNetwork()).chainId,
+    verifyingContract: await audit.getAddress(),
   };
   const decisionTypes = {
     Decision: [
@@ -89,19 +90,16 @@ async function main() {
       ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [[worker.address]])
     );
 
-    // Router decision sign
-    const decisionInnerDigest = ethers.TypedDataEncoder.hash(domain, decisionTypes, {
-      taskHash, rankedAgents: ranked, topAgent: worker.address, timestamp: ts,
-    });
+    // Router decision sign（P1-C2:合约链上重建 digest,这里只需签名,传明文字段）
     const decisionSig = await router.signTypedData(domain, decisionTypes, {
       taskHash, rankedAgents: ranked, topAgent: worker.address, timestamp: ts,
     });
 
-    // 4a) logScheduleWithDecision —— 传入合约的 digest 必须等于签名时的 digest
+    // 4a) logScheduleWithDecision —— 传 Decision 明文字段,合约链上重建 EIP-712 摘要
     const t1 = process.hrtime.bigint();
     const tx1 = await audit.connect(requester).logScheduleWithDecision(
       requester.address, worker.address, taskCommitment,
-      0 /* QUALIFIED */, router.address, decisionInnerDigest, decisionSig
+      0 /* QUALIFIED */, router.address, taskHash, ranked, ts, decisionSig
     );
     const r1 = await tx1.wait();
     const t2 = process.hrtime.bigint();
@@ -127,18 +125,15 @@ async function main() {
         [recordId, resultHash, ts]
       )
     );
-    // 真实签的 32 字节消息 = EIP-712 hashStruct
-    const signedDigest = ethers.TypedDataEncoder.hash(domain, resultTypes, {
-      recordId, resultDigest: innerDigest, timestamp: ts,
-    });
+    // P1-C2:合约链上重建 Result 摘要,这里只需签名,传 resultDigest + timestamp 明文
     const workerSig = await worker.signTypedData(domain, resultTypes, {
       recordId, resultDigest: innerDigest, timestamp: ts,
     });
 
-    // 4b) updateExecutionWithSig —— 传入合约的 digest 必须等于签名时的 digest
+    // 4b) updateExecutionWithSig —— 传 resultDigest + timestamp,合约链上重建摘要
     const t3 = process.hrtime.bigint();
     const tx2 = await audit.connect(worker).updateExecutionWithSig(
-      recordId, 1 /* SUCCESS */, resultStr, signedDigest, workerSig
+      recordId, 1 /* SUCCESS */, resultStr, innerDigest, ts, workerSig
     );
     const r2 = await tx2.wait();
     const t4 = process.hrtime.bigint();

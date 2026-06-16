@@ -13,7 +13,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
-import { RouterAgent } from '../src/router-agent.js';
+import { RouterAgent, ruleScore, clampScore } from '../src/router-agent.js';
 import { SiliconFlowClient } from '../src/siliconflow-client.js';
 import type { Candidate } from '../src/types.js';
 
@@ -214,6 +214,55 @@ describe('agents/router-agent', function () {
       expect(result.agent.address).to.equal('0xAgent1');
       expect(result.reason).to.be.a('string');
       expect(result.executionLog).to.be.an('array');
+    });
+  });
+
+  // P1-C4：确定性评分 —— 消除 Math.random 兜底后，评分必须可复现
+  describe('ruleScore / clampScore (P1-C4 deterministic scoring)', function () {
+    const mk = (qualification: string, avgRating: number): Candidate => ({
+      address: '0xX',
+      did: 'did:x',
+      qualification,
+      avgRating,
+      ratingCount: 1,
+      isActive: true,
+      score: 0,
+    });
+
+    it('ruleScore matches paper formula 0.6q+0.4rNorm for qualification match', function () {
+      // q=60, rNorm=80*0.4=32 → 0.6*60 + 0.4*32 = 36 + 12.8 = 48.8
+      expect(ruleScore(mk('code_review', 80), 'code_review')).to.be.closeTo(48.8, 1e-9);
+    });
+
+    it('ruleScore uses q=40 for qualification mismatch', function () {
+      // q=40, rNorm=80*0.4=32 → 0.6*40 + 0.4*32 = 24 + 12.8 = 36.8
+      expect(ruleScore(mk('translation', 80), 'code_review')).to.be.closeTo(36.8, 1e-9);
+    });
+
+    it('ruleScore is deterministic (same input → same output across calls)', function () {
+      const c = mk('code_review', 73);
+      const first = ruleScore(c, 'code_review');
+      for (let i = 0; i < 100; i++) {
+        expect(ruleScore(c, 'code_review')).to.equal(first);
+      }
+    });
+
+    it('ruleScore ranks a qualification-matched high-rep candidate highest', function () {
+      const match = ruleScore(mk('code_review', 90), 'code_review'); // 36 + 14.4 = 50.4
+      const mismatch = ruleScore(mk('weather', 90), 'code_review'); // 24 + 14.4 = 38.4
+      const matchLowRep = ruleScore(mk('code_review', 10), 'code_review'); // 36 + 1.6 = 37.6
+      expect(match).to.be.greaterThan(mismatch);
+      expect(match).to.be.greaterThan(matchLowRep);
+    });
+
+    it('clampScore bounds LLM-returned scores to [0,100]', function () {
+      expect(clampScore(150)).to.equal(100);
+      expect(clampScore(-20)).to.equal(0);
+      expect(clampScore(73)).to.equal(73);
+      // 非有限值（NaN/Infinity）视为异常输入，归 0（异常值不应获得高分）
+      expect(clampScore(NaN)).to.equal(0);
+      expect(clampScore(Infinity)).to.equal(0);
+      expect(clampScore(-Infinity)).to.equal(0);
     });
   });
 });

@@ -134,14 +134,41 @@ contract Reputation is Ownable {
     }
 
     // ===== 新版：时间衰减后的 effective rating =====
+    // 指数衰减 decay(Δt) = averageRating · 2^(-Δt/halfLife)，实现论文公式 (2) e^(-λΔt)（λ=ln2/τ）。
+    // Solidity 无浮点：将 Δt 拆为「整数个半衰期 n」+「余数 r」。
+    //   2^(-Δt/τ) = 2^(-n) · 2^(-r/τ)
+    // 整数部分用移位精确减半；余数部分 2^(-r/τ)（r/τ∈[0,1)）用割线下界近似 1 - 0.5·(r/τ)，
+    // 在单个半衰期内连接 (0,1) 与 (1,0.5)。该近似单调、连续，无旧实现的 30 天硬归零悬崖——
+    // 信誉随时间平滑趋近 0（永不人为置 0，也不设非零下限：不活跃 Agent 不应永久保留信誉）。
+    uint256 public constant DECAY_PRECISION = 1e18;
+
     function timeDecayed(address agent) public view returns (uint256) {
         AgentReputation memory rep = reputations[agent];
         if (rep.ratingCount == 0) return 0;
         if (halfLifeSeconds == 0) return rep.averageRating;
         uint256 dt = block.timestamp > rep.lastUpdated ? block.timestamp - rep.lastUpdated : 0;
-        uint256 decay = (dt * 10000) / halfLifeSeconds;
-        if (decay >= 10000) return 0;
-        return (rep.averageRating * (10000 - decay)) / 10000;
+        if (dt == 0) return rep.averageRating;
+
+        // 整数个半衰期：每个精确减半（右移）
+        uint256 nHalfLives = dt / halfLifeSeconds;
+        uint256 remainder = dt % halfLifeSeconds;
+
+        // factor 以 1e18 为基准（=1.0）
+        uint256 factor = DECAY_PRECISION;
+        // 限制移位次数，避免无意义的长循环；>=256 个半衰期后已衰减到尘埃（factor=0）
+        if (nHalfLives >= 256) {
+            return 0;
+        }
+        factor >>= nHalfLives; // 乘以 2^(-nHalfLives)
+
+        // 余数部分：2^(-remainder/halfLife) ≈ 1 - 0.5 · (remainder/halfLife)
+        // remainder/halfLife ∈ [0,1)，割线连接 (0,1) 与 (1,0.5)
+        if (remainder > 0) {
+            uint256 fracDecayBps = (remainder * 5000) / halfLifeSeconds; // 0.5·frac，单位 bps
+            factor = (factor * (10000 - fracDecayBps)) / 10000;
+        }
+
+        return (rep.averageRating * factor) / DECAY_PRECISION;
     }
 
     function isReliableWeighted(address agent) external view returns (bool) {

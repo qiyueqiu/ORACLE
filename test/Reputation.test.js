@@ -107,26 +107,29 @@ describe("Reputation Contract", function () {
             expect(await reputation.timeDecayed(addr2.address)).to.equal(80);
         });
 
-        it("Should decay to ~0 after one halfLife", async function () {
+        it("Should decay to ~50% after one halfLife (exponential)", async function () {
             await ethers.provider.send("evm_increaseTime", [30 * 24 * 60 * 60]);
             await ethers.provider.send("evm_mine", []);
             const decayed = await reputation.timeDecayed(addr2.address);
-            expect(decayed).to.be.lessThan(2);
-        });
-
-        it("Should decay proportionally for partial period", async function () {
-            await ethers.provider.send("evm_increaseTime", [15 * 24 * 60 * 60]);
-            await ethers.provider.send("evm_mine", []);
-            const decayed = await reputation.timeDecayed(addr2.address);
-            // 80 * (10000 - 5000) / 10000 = 40
+            // 指数衰减：一个半衰期后保留 2^(-1) = 50% → 80 * 0.5 = 40
             expect(decayed).to.equal(40);
         });
 
-        it("Should be adjustable by owner", async function () {
+        it("Should decay by secant approximation for partial period", async function () {
+            await ethers.provider.send("evm_increaseTime", [15 * 24 * 60 * 60]);
+            await ethers.provider.send("evm_mine", []);
+            const decayed = await reputation.timeDecayed(addr2.address);
+            // 半个半衰期：割线近似 2^(-0.5) ≈ 1 - 0.5*0.5 = 0.75 → 80 * 0.75 = 60
+            // （真实指数 2^(-0.5)≈0.707→56.6，割线为单调连续上界，误差 ~6%）
+            expect(decayed).to.equal(60);
+        });
+
+        it("Should be adjustable by owner (halfLife=60d, 30d → 0.75 factor)", async function () {
             await reputation.connect(owner).setHalfLife(60 * 24 * 60 * 60);
             await ethers.provider.send("evm_increaseTime", [30 * 24 * 60 * 60]);
             await ethers.provider.send("evm_mine", []);
-            expect(await reputation.timeDecayed(addr2.address)).to.equal(40);
+            // 30d / 60d = 0.5 个半衰期 → 割线 0.75 → 80 * 0.75 = 60
+            expect(await reputation.timeDecayed(addr2.address)).to.equal(60);
         });
     });
 
@@ -253,16 +256,15 @@ describe("Reputation Contract", function () {
             expect(rep.ratingCount).to.equal(11);
         });
 
-        it("timeDecayed() should reach 0 after one halfLife (30d) — linear decay", async function () {
+        it("timeDecayed() should retain 50% after one halfLife (30d) — exponential decay", async function () {
             await reputation.connect(owner).addRating(addr1.address, 100);
             // 时间快进 30 天
             await ethers.provider.send("evm_increaseTime", [30 * 24 * 3600]);
             await ethers.provider.send("evm_mine", []);
             const decayed = await reputation.timeDecayed(addr1.address);
-            // 实际实现：decay = (dt*10000)/halfLifeSeconds；30d 触发 if (decay>=10000) return 0
-            // 即线性归零，与论文公式 (2) e^(-λΔt) 的指数衰减有差异
-            // 见论文 5.3 节工程讨论
-            expect(decayed).to.equal(0);
+            // 修复后:指数衰减 decay(τ) = avg · 2^(-1) = 50% → 100 * 0.5 = 50
+            // (旧实现为线性 (dt/τ)*100% 在 30d 硬归零 0,与论文公式 (2) e^(-λΔt) 不符;已修复)
+            expect(decayed).to.equal(50);
         });
 
         it("isReliable() should require both avg>=60 AND count>=3", async function () {
@@ -274,6 +276,74 @@ describe("Reputation Contract", function () {
             await reputation.connect(addr2).addRating(addr3.address, 40);
             // avg = (100+40+40)/3 = 60，count=3 → 刚达阈值
             expect(await reputation.isReliable(addr3.address)).to.equal(true);
+        });
+    });
+
+    // P1-C3：指数衰减不变量（替换旧线性衰减后的正确性保证）
+    describe("Exponential Decay Invariants (P1-C3)", function () {
+        const DAY = 24 * 3600;
+        const HALF_LIFE = 30 * DAY;
+
+        beforeEach(async function () {
+            // addr2 建立 avgRating = 100（单票满分，便于核对衰减比例）
+            await reputation.connect(owner).addRating(addr2.address, 100);
+        });
+
+        it("Should halve at each successive halfLife (2^-n: 100→50→25→12)", async function () {
+            // 注意:timeDecayed 基于 lastUpdated,不更新 rating 则 dt 持续累加。
+            // 用累计时间点验证 2^(-n)。
+            const expectations = [
+                { days: 0, value: 100 },   // 2^0
+                { days: 30, value: 50 },   // 2^-1
+                { days: 60, value: 25 },   // 2^-2
+                { days: 90, value: 12 },   // 2^-3 = 12.5 → 整数截断 12
+                { days: 120, value: 6 },   // 2^-4 = 6.25 → 6
+            ];
+            let elapsed = 0;
+            for (const { days, value } of expectations) {
+                const advance = days * DAY - elapsed;
+                if (advance > 0) {
+                    await ethers.provider.send("evm_increaseTime", [advance]);
+                    await ethers.provider.send("evm_mine", []);
+                    elapsed = days * DAY;
+                }
+                expect(await reputation.timeDecayed(addr2.address)).to.equal(value);
+            }
+        });
+
+        it("Should be monotonically non-increasing over time", async function () {
+            let prev = await reputation.timeDecayed(addr2.address);
+            for (let i = 1; i <= 8; i++) {
+                await ethers.provider.send("evm_increaseTime", [10 * DAY]);
+                await ethers.provider.send("evm_mine", []);
+                const cur = await reputation.timeDecayed(addr2.address);
+                expect(cur).to.be.lte(prev);
+                prev = cur;
+            }
+        });
+
+        it("Should never hit a hard-zero cliff at exactly one halfLife (regression vs linear)", async function () {
+            // 旧线性实现在 dt>=halfLife 时 return 0;指数实现应为 50,绝不是 0
+            await ethers.provider.send("evm_increaseTime", [HALF_LIFE]);
+            await ethers.provider.send("evm_mine", []);
+            const decayed = await reputation.timeDecayed(addr2.address);
+            expect(decayed).to.equal(50);
+            expect(decayed).to.be.greaterThan(0);
+        });
+
+        it("Should approach (but engineering-floor at) 0 only after many halfLives", async function () {
+            // 7 个半衰期 (210d):2^-7 ≈ 0.78% → 100*0.0078 = 0 (整数截断),但非悬崖式
+            await ethers.provider.send("evm_increaseTime", [210 * DAY]);
+            await ethers.provider.send("evm_mine", []);
+            const decayed = await reputation.timeDecayed(addr2.address);
+            expect(decayed).to.equal(0); // 整数算术下 2^-7·100 截断为 0,属自然衰减非硬归零
+        });
+
+        it("Should return averageRating when halfLife is 0 (decay disabled)", async function () {
+            await reputation.connect(owner).setHalfLife(0);
+            await ethers.provider.send("evm_increaseTime", [365 * DAY]);
+            await ethers.provider.send("evm_mine", []);
+            expect(await reputation.timeDecayed(addr2.address)).to.equal(100);
         });
     });
 });

@@ -17,7 +17,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import { ethers } from 'ethers';
 import { AuditLog__factory } from '../../typechain-types/index.js';
-import { RouterAgent } from './router-agent.js';
+import { RouterAgent, ruleScore } from './router-agent.js';
 import { WorkerAgent, QUALIFICATION_CONFIG } from './worker-agents.js';
 import { ReputationAnalyzerAgent, SCORING_DIMENSIONS } from './reputation-analyzer.js';
 import type { AppConfig, Intent, Candidate, ExecutionResult, SSEEventData } from './types.js';
@@ -74,11 +74,14 @@ const workerDemoSigner = new ethers.Wallet(CONFIG.WORKER_DEMO_PK, sharedProvider
 // 审计合约（TypeChain 类型化，连 routerSigner）
 const auditLogContract = AuditLog__factory.connect(CONFIG.CONTRACT_ADDRESSES.AuditLog, routerSigner);
 
-// EIP-712 domain
+// EIP-712 domain（P1-C2：必须与 AuditLog.domainSeparator() 完全一致）
+// 合约固定 name="ORACLE AuditLog" / version="1"，并含 verifyingContract=AuditLog 地址，
+// 防止签名跨链（chainId）、跨合约（verifyingContract）重放。
 const EIP712_DOMAIN = {
-  name: CONFIG.EIP712_DOMAIN_NAME,
-  version: CONFIG.EIP712_DOMAIN_VERSION,
+  name: 'ORACLE AuditLog',
+  version: '1',
   chainId: CONFIG.CHAIN_ID,
+  verifyingContract: CONFIG.CONTRACT_ADDRESSES.AuditLog,
 };
 
 const ROUTER_DECISION_TYPES = {
@@ -319,13 +322,22 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       ranked = evalResult.candidates;
       decision = evalResult.decision;
     } catch {
-      // 注意：P1 将删除此 Math.random 兜底，统一为确定性 ruleScore
+      // P1-C4：删除 Math.random 随机兜底，改用确定性 ruleScore（论文公式 3），
+      // 保证 LLM 不可用时评分仍可复现，且签名上链的排名是确定的。
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          component: 'api-server',
+          event: 'router_eval_fallback',
+          detail: 'LLM 评估失败，降级到确定性规则评分 ruleScore',
+        }),
+      );
       ranked.forEach((c) => {
-        c.score = 50 + Math.random() * 30;
-        c.reason = '规则评分';
+        c.score = ruleScore(c, intent.requiredQualification);
+        c.reason = c.qualification === intent.requiredQualification ? '资质完全匹配' : '资质部分匹配';
       });
       ranked.sort((a, b) => b.score - a.score);
-      decision = 'LLM 不可用，使用规则匹配';
+      decision = 'LLM 不可用，使用确定性规则评分（ruleScore）';
     }
     sendEvent('evaluated', {
       rankings: ranked.map((c) => ({ did: c.did, address: c.address, score: c.score, reason: c.reason })),
@@ -348,6 +360,7 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
     let decisionDigest: string;
     let decisionSig: string;
     try {
+      // digest 仅用于 SSE 展示/审计可读性；合约不再接收 digest，而是链上用明文字段重建（P1-C2）
       decisionDigest = ethers.TypedDataEncoder.hash(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
       decisionSig = await routerSigner.signTypedData(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
     } catch (sigErr) {
@@ -413,13 +426,16 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
     // Phase 6: 链上记录（带签名）
     sendEvent('phase', { phase: 'logging', message: '记录审计日志到区块链...', icon: '⛓️' });
     try {
+      // P1-C2：传 Decision 明文字段（taskHash/rankedAgents/timestamp），合约链上重建 EIP-712 摘要
       const tx1 = await auditLogContract.logScheduleWithDecision(
         routerWalletAddress,
         selected.address,
         finalCommitment,
         0,
         routerWalletAddress,
-        decisionDigest,
+        taskHash,
+        rankedAgentsHash,
+        timestamp,
         decisionSig,
       );
       const r1 = await tx1.wait();
@@ -437,11 +453,13 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
         resultDigest,
         timestamp,
       });
+      // P1-C2：传 resultTimestamp，合约链上重建 Result 摘要
       const tx2 = await auditLogContract.updateExecutionWithSig(
         recordId,
         1,
         executionResult.result,
         resultDigest,
+        timestamp,
         workerSig,
       );
       await tx2.wait();
@@ -553,23 +571,21 @@ app.post('/api/dispatch', async (req: Request, res: Response) => {
       topAgent: routingResult.agent.address,
       timestamp,
     };
-    const decisionDigest = ethers.TypedDataEncoder.hash(
-      EIP712_DOMAIN,
-      ROUTER_DECISION_TYPES,
-      decisionValue,
-    );
     const decisionSig = await routerSigner.signTypedData(
       EIP712_DOMAIN,
       ROUTER_DECISION_TYPES,
       decisionValue,
     );
+    // P1-C2：传 Decision 明文字段，合约链上重建 EIP-712 摘要
     const tx1 = await auditLogContract.logScheduleWithDecision(
       routerWalletAddress,
       routingResult.agent.address,
       commitment,
       0,
       routerWalletAddress,
-      decisionDigest,
+      taskHash,
+      rankedAgentsHash,
+      timestamp,
       decisionSig,
     );
     const r1 = await tx1.wait();
@@ -591,6 +607,7 @@ app.post('/api/dispatch', async (req: Request, res: Response) => {
       1,
       executionResult.result,
       resultDigest,
+      timestamp,
       workerSig,
     );
     await tx2.wait();

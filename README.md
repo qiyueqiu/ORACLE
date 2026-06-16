@@ -58,7 +58,7 @@ flowchart TB
 | **前端** | TypeScript · React 18 · Vite · Tailwind CSS · ethers.js v6 |
 | **后端 Agent** | Node.js · Express · SiliconFlow LLM API |
 | **区块链** | Hardhat · Solidity 0.8.20（本地网络 localhost:8545, chainId 31337） |
-| **核心机制** | DID 身份（ZKP 模拟）· 链上审计日志 · 信誉评分系统 |
+| **核心机制** | DID 身份（哈希承诺 commit-reveal，非 ZKP）· 链上审计日志 · 信誉评分系统 |
 
 ## 项目结构
 
@@ -175,7 +175,7 @@ sequenceDiagram
 
 - 注册时：生成 DID + 资质承诺 `commitment = keccak256(abi.encodePacked(nullifier, secretHash))`
 - 验证时：提交 nullifier + secretHash，合约验证 `keccak256(abi.encodePacked(nullifier, secretHash)) == commitment`
-- 模拟 ZKP：资质"承诺-证明"模式，nullifier 防止重复使用，不上链真实零知识证明
+- 哈希承诺（commit-reveal，非零知识）：资质"承诺-证明"模式基于 `keccak256` 哈希承诺，nullifier 防止重复使用。注意：这是哈希承诺方案，**不是**零知识证明——验证时需提交 nullifier+secretHash 明文开承诺，并未隐藏 secretHash。真实 ZKP 集成列为未来工作。
 
 ### 审计追溯（AuditLog）
 

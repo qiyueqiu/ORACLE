@@ -22,6 +22,23 @@ interface IntentRanking {
   reason: string;
 }
 
+/**
+ * 确定性规则评分（论文公式 (3)）：score = 0.6·q + 0.4·rNorm
+ *   q ∈ {60, 40}（资质匹配 60，否则 40），rNorm = avgRating · 0.4（百分制 0-100 → 0-40）
+ * 满分 100。纯函数、无随机性——LLM 不可用时的确定性兜底，保证审计可复现（P1-C4）。
+ */
+export function ruleScore(candidate: Candidate, requiredQualification: string): number {
+  const q = candidate.qualification === requiredQualification ? 60 : 40;
+  const rNorm = candidate.avgRating * 0.4;
+  return 0.6 * q + 0.4 * rNorm;
+}
+
+/** 把任意 LLM 返回的分数收敛到 [0, 100] 区间，防止越界分污染排序（P1-C4） */
+export function clampScore(score: number): number {
+  if (!Number.isFinite(score)) return 0;
+  return Math.min(100, Math.max(0, score));
+}
+
 export class RouterAgent {
   private llm: SiliconFlowClient;
   private provider: ethers.JsonRpcProvider;
@@ -193,11 +210,11 @@ export class RouterAgent {
         duration: Date.now() - startTime,
       });
 
-      // 更新候选分数
+      // 更新候选分数（LLM 返回分 clamp 到 [0,100]，防越界污染排序）
       if (result.data.rankings) {
         result.data.rankings.forEach((r) => {
           if (candidates[r.index]) {
-            candidates[r.index].score = r.score;
+            candidates[r.index].score = clampScore(r.score);
             candidates[r.index].reason = r.reason;
           }
         });
@@ -219,12 +236,9 @@ export class RouterAgent {
         duration: Date.now() - startTime,
       });
 
-      // 规则评分（改造 A3）：与论文公式 (3) 严格一致
-      // score = 0.6 * q + 0.4 * rNorm，其中 q ∈ {60, 40}，rNorm = avgRating * 0.4
+      // 规则评分（改造 A3 / P1-C4）：复用确定性纯函数 ruleScore，与论文公式 (3) 严格一致
       candidates.forEach((c) => {
-        const q = c.qualification === requiredQualification ? 60 : 40;
-        const rNorm = c.avgRating * 0.4;
-        c.score = 0.6 * q + 0.4 * rNorm;
+        c.score = ruleScore(c, requiredQualification);
         c.reason = c.qualification === requiredQualification ? '资质完全匹配' : '资质部分匹配';
       });
       candidates.sort((a, b) => b.score - a.score);

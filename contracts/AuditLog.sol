@@ -68,6 +68,56 @@ contract AuditLog is Ownable {
     uint256 public nextRecordId = 1;
     address public agentDID;  // 用于读取 Agent 公钥做 ecrecover
 
+    // ===== P1-C2：EIP-712 链上重建（防跨链/跨合约重放）=====
+    // 旧实现直接对调用方传入的 digest 做 ecrecover，不绑定 chainId/verifyingContract，
+    // 也不绑定实际存储字段 → 可跨链/跨合约重放，且 digest 与记录解耦。
+    // 现镜像 AgentDID 的范式，在链上用记录字段重建 typed-data hash 再 recover。
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH = keccak256(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+    );
+    // Router 决策签名结构（与后端 ROUTER_DECISION_TYPES 一致）
+    bytes32 private constant DECISION_TYPEHASH = keccak256(
+        "Decision(bytes32 taskHash,bytes32 rankedAgents,address topAgent,uint256 timestamp)"
+    );
+    // Worker 结果签名结构（与后端 WORKER_RESULT_TYPES 一致）
+    bytes32 private constant RESULT_TYPEHASH = keccak256(
+        "Result(uint256 recordId,bytes32 resultDigest,uint256 timestamp)"
+    );
+
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(abi.encode(
+            EIP712_DOMAIN_TYPEHASH,
+            keccak256(bytes("ORACLE AuditLog")),
+            keccak256(bytes("1")),
+            block.chainid,
+            address(this)
+        ));
+    }
+
+    function _hashDecision(
+        bytes32 taskHash,
+        bytes32 rankedAgents,
+        address topAgent,
+        uint256 timestamp
+    ) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(
+            DECISION_TYPEHASH, taskHash, rankedAgents, topAgent, timestamp
+        ));
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
+    }
+
+    function _hashResult(
+        uint256 recordId,
+        bytes32 resultDigest,
+        uint256 timestamp
+    ) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(
+            RESULT_TYPEHASH, recordId, resultDigest, timestamp
+        ));
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
+    }
+
+
     event ScheduleLogged(
         uint256 indexed recordId,
         address indexed requester,
@@ -116,24 +166,30 @@ contract AuditLog is Ownable {
         return _logScheduleInternal(requester, targetAgent, commitment, decisionReason, address(0), bytes32(0));
     }
 
-    // ===== 新版：带 Router 签名 =====
+    // ===== 新版：带 Router 签名（P1-C2：链上重建 EIP-712 摘要）=====
+    // 不再接收调用方预算的 decisionDigest，而是接收 Decision 结构的明文字段，
+    // 在链上用本合约 domainSeparator（含 chainId + address(this)）重建 typed-data hash，
+    // 再 ecrecover。绑定 topAgent == targetAgent，确保签名内容与记录一致。
     function logScheduleWithDecision(
         address requester,
         address targetAgent,
         bytes32 taskCommitment,
         DecisionReason decisionReason,
         address routerSigner,
-        bytes32 decisionDigest,
+        bytes32 taskHash,
+        bytes32 rankedAgents,
+        uint256 decisionTimestamp,
         bytes calldata decisionSig
     ) external returns (uint256) {
-        require(decisionDigest != bytes32(0), "Empty digest");
         require(decisionSig.length == 65, "Invalid sig length");
-        // ecrecover：恢复签名者
-        address recovered = decisionDigest.recover(decisionSig);
+        require(routerSigner != address(0), "Zero router signer");
+        // 链上重建 digest：绑定 chainId + verifyingContract + 决策内容（topAgent=targetAgent）
+        bytes32 digest = _hashDecision(taskHash, rankedAgents, targetAgent, decisionTimestamp);
+        address recovered = digest.recover(decisionSig);
         require(recovered == routerSigner, "Bad router sig");
         // commitment 不能重复
         require(commitmentToRecord[taskCommitment] == 0, "Commitment reused");
-        return _logScheduleInternal(requester, targetAgent, taskCommitment, decisionReason, routerSigner, decisionDigest);
+        return _logScheduleInternal(requester, targetAgent, taskCommitment, decisionReason, routerSigner, digest);
     }
 
     function _logScheduleInternal(
@@ -187,17 +243,22 @@ contract AuditLog is Ownable {
         emit ExecutionUpdated(recordId, status, result, address(0));
     }
 
-    // ===== 新版：带 Worker 签名 =====
+    // ===== 新版：带 Worker 签名（P1-C2：链上重建 EIP-712 摘要）=====
+    // worker 对 Result(recordId, resultDigest, timestamp) 结构签名；链上用本合约
+    // domainSeparator 重建 typed-data hash 再 recover，绑定 recordId+chainId+verifyingContract，
+    // 杜绝跨记录/跨链/跨合约重放。recovered 必须等于 targetAgent 在 AgentDID 上注册的 pubKey。
     function updateExecutionWithSig(
         uint256 recordId,
         ExecutionStatus status,
         string calldata result,
         bytes32 resultDigest,
+        uint256 resultTimestamp,
         bytes calldata workerSig
     ) external {
         require(records[recordId].exists, "Record not found");
         require(workerSig.length == 65, "Invalid sig length");
-        address recovered = resultDigest.recover(workerSig);
+        bytes32 digest = _hashResult(recordId, resultDigest, resultTimestamp);
+        address recovered = digest.recover(workerSig);
         require(recovered != address(0), "Bad sig");
         // recovered 必须是 targetAgent 在 AgentDID 上的 pubKey
         if (agentDID != address(0)) {

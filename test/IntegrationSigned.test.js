@@ -13,7 +13,7 @@ const { ethers } = require("hardhat");
 describe("Integration: signed audit flow (改造 1+2+3)", function () {
     const CHAIN_ID = 31337;
     const EIP712_DOMAIN_AUDIT = (verifyingContract) => ({
-        name: "ORACLE Agent Bus",
+        name: "ORACLE AuditLog",
         version: "1",
         chainId: CHAIN_ID,
         verifyingContract,
@@ -97,7 +97,7 @@ describe("Integration: signed audit flow (改造 1+2+3)", function () {
             taskCommitment,
             0,                     // QUALIFIED
             routerWallet.address,
-            decisionDigest,
+            taskHash, rankedAgentsHash, timestamp,
             decisionSig
         );
         const r1 = await tx1.wait();
@@ -125,7 +125,7 @@ describe("Integration: signed audit flow (改造 1+2+3)", function () {
 
         // 5. Worker 上链 updateExecutionWithSig
         const tx2 = await auditLog.connect(otherSigner).updateExecutionWithSig(
-            recordId, 1, resultText, resultDigest, workerSig
+            recordId, 1, resultText, resultDigestPlain, timestamp, workerSig
         );
         await tx2.wait();
 
@@ -144,6 +144,7 @@ describe("Integration: signed audit flow (改造 1+2+3)", function () {
         const rankedAgents = ethers.keccak256(ethers.toUtf8Bytes("rank"));
         const timestamp = 1700000000;
         const decisionValue = { taskHash, rankedAgents, topAgent: requester.address, timestamp };
+        // compute digest only for post-call verification; not passed to contract
         const decisionDigest = ethers.TypedDataEncoder.hash(
             EIP712_DOMAIN_AUDIT(await auditLog.getAddress()),
             ROUTER_DECISION_TYPES,
@@ -163,14 +164,22 @@ describe("Integration: signed audit flow (改造 1+2+3)", function () {
         // 声称 routerWallet 但实际是 otherSigner 的签名 → 失败
         await expect(
             auditLog.connect(otherSigner).logScheduleWithDecision(
-                otherSigner.address, requester.address, taskHash, 0,
-                routerWallet.address, decisionDigest, fakeSig
+                otherSigner.address, requester.address,
+                taskHash, // use taskHash as commitment (non-zero, unique)
+                0,
+                routerWallet.address,
+                taskHash, rankedAgents, timestamp,
+                fakeSig
             )
         ).to.be.revertedWith("Bad router sig");
         // 真实签名可以
         await auditLog.connect(otherSigner).logScheduleWithDecision(
-            otherSigner.address, requester.address, taskHash, 0,
-            routerWallet.address, decisionDigest, realSig
+            otherSigner.address, requester.address,
+            taskHash,
+            0,
+            routerWallet.address,
+            taskHash, rankedAgents, timestamp,
+            realSig
         );
     });
 
@@ -179,22 +188,22 @@ describe("Integration: signed audit flow (改造 1+2+3)", function () {
         const rankedAgents = ethers.keccak256(ethers.toUtf8Bytes("r"));
         const ts = 1700000000;
         const v = { taskHash, rankedAgents, topAgent: requester.address, timestamp: ts };
-        const digest = ethers.TypedDataEncoder.hash(
-            EIP712_DOMAIN_AUDIT(await auditLog.getAddress()),
-            ROUTER_DECISION_TYPES, v
-        );
         const sig = await routerWallet.signTypedData(
             EIP712_DOMAIN_AUDIT(await auditLog.getAddress()),
             ROUTER_DECISION_TYPES, v
         );
         await auditLog.connect(otherSigner).logScheduleWithDecision(
             otherSigner.address, requester.address, taskHash, 0,
-            routerWallet.address, digest, sig
+            routerWallet.address,
+            taskHash, rankedAgents, ts,
+            sig
         );
         await expect(
             auditLog.connect(otherSigner).logScheduleWithDecision(
                 otherSigner.address, requester.address, taskHash, 0,
-                routerWallet.address, digest, sig
+                routerWallet.address,
+                taskHash, rankedAgents, ts,
+                sig
             )
         ).to.be.revertedWith("Commitment reused");
     });

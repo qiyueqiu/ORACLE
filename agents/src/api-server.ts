@@ -20,6 +20,7 @@ import { AuditLog__factory } from '../../typechain-types/index.js';
 import { RouterAgent, ruleScore } from './router-agent.js';
 import { WorkerAgent, QUALIFICATION_CONFIG } from './worker-agents.js';
 import { ReputationAnalyzerAgent, SCORING_DIMENSIONS } from './reputation-analyzer.js';
+import { makeWorkerSigningProvider } from './worker-signing.js';
 import type { AppConfig, Intent, Candidate, ExecutionResult, SSEEventData } from './types.js';
 import { toQualification } from './types.js';
 
@@ -52,9 +53,14 @@ const CONFIG: AppConfig = {
     AuditLog: required('AUDIT_LOG_ADDRESS'),
     Reputation: required('REPUTATION_ADDRESS'),
   },
-  ROUTER_SIGNER_PK: required('ROUTER_SIGNER_PRIVATE_KEY'),
+  ROUTER_SIGNER_PK: required('ROUTER_SIGNER_KEY', process.env.ROUTER_SIGNER_PRIVATE_KEY),
   REPUTATION_SIGNER_PK: required('REPUTATION_SIGNER_PRIVATE_KEY'),
-  WORKER_DEMO_PK: required('WORKER_DEMO_PRIVATE_KEY'),
+  // P2：worker 不再由单一密钥代签；模式 demo（助记词派生）| relay（转发预签名）
+  WORKER_SIGNING_MODE: (process.env.WORKER_SIGNING_MODE === 'relay' ? 'relay' : 'demo') as
+    | 'demo'
+    | 'relay',
+  WORKER_DEMO_MNEMONIC:
+    process.env.WORKER_DEMO_MNEMONIC || 'test test test test test test test test test test test junk',
   EIP712_DOMAIN_NAME: process.env.EIP712_DOMAIN_NAME || 'ORACLE Agent Bus',
   EIP712_DOMAIN_VERSION: process.env.EIP712_DOMAIN_VERSION || '1',
   ACCESS_KEYS: (process.env.API_ACCESS_KEYS || '')
@@ -69,7 +75,13 @@ const CONFIG: AppConfig = {
 const sharedProvider = new ethers.JsonRpcProvider(CONFIG.PROVIDER_URL);
 const routerSigner = new ethers.Wallet(CONFIG.ROUTER_SIGNER_PK, sharedProvider);
 const routerWalletAddress = routerSigner.address;
-const workerDemoSigner = new ethers.Wallet(CONFIG.WORKER_DEMO_PK, sharedProvider);
+
+// P2（修复 C1）：worker 不再由单一密钥代签。后端是无特权中继——按选中 agent 的地址
+// 取「该 agent 自己的」签名器；demo 模式由助记词确定性派生，链上 pubKey 与之绑定，
+// 后端无法用一把钥伪造任意 agent 的结果。
+const workerSigning = makeWorkerSigningProvider(CONFIG.WORKER_SIGNING_MODE, {
+  mnemonic: CONFIG.WORKER_DEMO_MNEMONIC,
+});
 
 // 审计合约（TypeChain 类型化，连 routerSigner）
 const auditLogContract = AuditLog__factory.connect(CONFIG.CONTRACT_ADDRESSES.AuditLog, routerSigner);
@@ -448,7 +460,9 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
           [recordId, resultHash, timestamp],
         ),
       );
-      const workerSig = await workerDemoSigner.signTypedData(EIP712_DOMAIN, WORKER_RESULT_TYPES, {
+      // P2：用选中 agent「自己的」签名器签 Result，而非单一后端代签密钥
+      const workerSigner = workerSigning.forAgent(selected.address);
+      const workerSig = await workerSigner.signTypedData(EIP712_DOMAIN, WORKER_RESULT_TYPES, {
         recordId,
         resultDigest,
         timestamp,
@@ -597,7 +611,9 @@ app.post('/api/dispatch', async (req: Request, res: Response) => {
         [recordId, resultHash, timestamp],
       ),
     );
-    const workerSig = await workerDemoSigner.signTypedData(EIP712_DOMAIN, WORKER_RESULT_TYPES, {
+    // P2：阻塞路径同样用选中 agent 自己的签名器
+    const blockingWorkerSigner = workerSigning.forAgent(routingResult.agent.address);
+    const workerSig = await blockingWorkerSigner.signTypedData(EIP712_DOMAIN, WORKER_RESULT_TYPES, {
       recordId,
       resultDigest,
       timestamp,

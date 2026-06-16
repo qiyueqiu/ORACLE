@@ -48,7 +48,12 @@ export interface AppConfig {
   };
   ROUTER_SIGNER_PK: string;
   REPUTATION_SIGNER_PK: string;
-  WORKER_DEMO_PK: string;
+  /** @deprecated P2：单一 worker 代签密钥已被 worker-signing provider 取代；保留仅为向后兼容 env */
+  WORKER_DEMO_PK?: string;
+  /** P2：worker 签名模式 —— 'demo'（助记词派生）| 'relay'（生产，转发预签名） */
+  WORKER_SIGNING_MODE: 'demo' | 'relay';
+  /** P2：demo 模式的 HD 助记词（默认 Hardhat 标准助记词） */
+  WORKER_DEMO_MNEMONIC: string;
   EIP712_DOMAIN_NAME: string;
   EIP712_DOMAIN_VERSION: string;
   ACCESS_KEYS: string[];

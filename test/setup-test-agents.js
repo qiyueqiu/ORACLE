@@ -83,11 +83,20 @@ async function main() {
       const secretHash = hashSecret(secret);
       const commitment = generateCommitment(nullifier, secretHash);
 
-      const tx = await agentDIDConnected.registerAgent(did, commitment, agent.type);
+      // P2（密钥分离）：注册时绑定 pubKey = agent 自己的地址。
+      // 这样链上 getPubKey(agent) == agent 地址，updateExecutionWithSig 要求
+      // worker 结果签名的 recovered == pubKey —— 只有持有该 agent 私钥者能签，
+      // 后端无法用单一代签密钥伪造。demo 中 agent 地址 = 其 Hardhat 账户 = pubKey。
+      const tx = await agentDIDConnected.registerAgentWithPubKey(
+        did,
+        commitment,
+        agent.type,
+        signer.address,
+      );
       await tx.wait();
 
       const agentAddress = signer.address;
-      console.log(`   ✓ 注册成功: ${agentAddress}`);
+      console.log(`   ✓ 注册成功: ${agentAddress} (pubKey 已绑定)`);
 
       for (const rating of agent.ratings) {
         const rateTx = await reputationConnected.addRating(agentAddress, rating);

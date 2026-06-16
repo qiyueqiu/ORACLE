@@ -1,6 +1,6 @@
 const { expect } = require("chai");
-const { IPFSClient, getIPFSClient } = require("../agents/ipfs-client");
-const { LitClient, getLitClient } = require("../agents/lit-client");
+const { IPFSClient, getIPFSClient } = require("../agents/ipfs-client.cjs");
+const { LitClient, getLitClient } = require("../agents/lit-client.cjs");
 
 describe("M2/M3 Storage & Privacy Adapters (mock mode)", function () {
     describe("IPFSClient (mock)", function () {

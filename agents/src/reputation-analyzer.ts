@@ -10,17 +10,32 @@
  *  - 规范性 (0-10): 格式是否清晰、逻辑是否连贯
  *
  * 总分 = 准确性 + 完整性 + 专业性 + 实用性 + 规范性 (满分 100)
- *
- * 惩罚机制:
- *  - 总分 < 40: 链上惩罚 +10
- *  - 总分 < 20: 链上惩罚 +30
  */
 
-const { ethers } = require('ethers');
-const { SiliconFlowClient } = require('./siliconflow-client');
-const { AgentDIDABI, AuditLogABI, ReputationABI } = require('../shared/abis');
+import { ethers } from 'ethers';
+import { SiliconFlowClient } from './siliconflow-client.js';
+import {
+  AgentDID__factory,
+  AuditLog__factory,
+  Reputation__factory,
+} from '../../typechain-types/index.js';
+import type { AgentDID, AuditLog, Reputation } from '../../typechain-types/index.js';
+import type { ExecutionLogEntry } from './types.js';
 
-const SCORING_DIMENSIONS = [
+interface ContractAddresses {
+  AgentDID: string;
+  AuditLog: string;
+  Reputation: string;
+}
+
+export interface ScoringDimension {
+  key: string;
+  name: string;
+  maxScore: number;
+  desc: string;
+}
+
+export const SCORING_DIMENSIONS: ScoringDimension[] = [
   { key: 'accuracy', name: '准确性', maxScore: 30, desc: '结果是否正确回答了任务的核心问题' },
   { key: 'completeness', name: '完整性', maxScore: 25, desc: '是否覆盖了任务的所有方面和要求' },
   { key: 'professionalism', name: '专业性', maxScore: 20, desc: '是否体现了专业知识和分析深度' },
@@ -28,29 +43,73 @@ const SCORING_DIMENSIONS = [
   { key: 'clarity', name: '规范性', maxScore: 10, desc: '格式是否清晰、逻辑是否连贯' },
 ];
 
-class ReputationAnalyzerAgent {
-  constructor(apiKey, providerUrl, contractAddresses, siliconflowClient) {
+interface DimensionScore {
+  score: number;
+  reason: string;
+}
+
+export interface AnalysisResult {
+  dimensions: Record<string, DimensionScore>;
+  totalScore: number;
+  quality: string;
+  taskCompleted: boolean;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  shouldPenalty: boolean;
+  penaltyReason: string;
+}
+
+export interface TaskResult {
+  task: string;
+  selectedAgent: { did: string; address: string; qualification: string };
+  executionResult: string;
+  chainOfThought?: string;
+  executionLog?: ExecutionLogEntry[];
+}
+
+interface ChainCallResult {
+  success: boolean;
+  score?: number;
+  txHash?: string;
+  error?: string;
+}
+
+export class ReputationAnalyzerAgent {
+  private llm: SiliconFlowClient;
+  private provider: ethers.JsonRpcProvider;
+  private contracts: { agentDID: AgentDID; auditLog: AuditLog; reputation: Reputation };
+  private signer: ethers.NonceManager | null;
+  private analysisHistory: ExecutionLogEntry[];
+
+  constructor(
+    apiKey: string,
+    providerUrl: string,
+    contractAddresses: ContractAddresses,
+    siliconflowClient?: SiliconFlowClient,
+  ) {
     this.llm = siliconflowClient || new SiliconFlowClient(apiKey);
     this.provider = new ethers.JsonRpcProvider(providerUrl);
     this.contracts = {
-      agentDID: new ethers.Contract(contractAddresses.AgentDID, AgentDIDABI, this.provider),
-      auditLog: new ethers.Contract(contractAddresses.AuditLog, AuditLogABI, this.provider),
-      reputation: new ethers.Contract(contractAddresses.Reputation, ReputationABI, this.provider),
+      agentDID: AgentDID__factory.connect(contractAddresses.AgentDID, this.provider),
+      auditLog: AuditLog__factory.connect(contractAddresses.AuditLog, this.provider),
+      reputation: Reputation__factory.connect(contractAddresses.Reputation, this.provider),
     };
     // 签名者由调用方注入（避免此处硬编码私钥）
     this.signer = null;
     this.analysisHistory = [];
   }
 
-  setSigner(wallet) {
+  setSigner(wallet: ethers.Wallet): void {
     this.signer = new ethers.NonceManager(wallet);
   }
 
-  async analyzeExecutionTrace(taskResult) {
+  async analyzeExecutionTrace(taskResult: TaskResult): Promise<AnalysisResult> {
     const { task, selectedAgent, executionResult, chainOfThought } = taskResult;
 
-    const dimensionsStr = SCORING_DIMENSIONS.map(d =>
-      `- ${d.name} (${d.key}): 0-${d.maxScore}分 — ${d.desc}`
+    const dimensionsStr = SCORING_DIMENSIONS.map(
+      (d) => `- ${d.name} (${d.key}): 0-${d.maxScore}分 — ${d.desc}`,
     ).join('\n');
 
     const analysisPrompt = `你是一个严格的任务执行质量评审专家。请按以下五个维度逐一评分。
@@ -82,9 +141,9 @@ ${chainOfThought || '无'}
   },
   "totalScore": 0,
   "quality": "excellent/good/acceptable/poor/failing",
-  "taskCompleted": true/false,
+  "taskCompleted": true,
   "summary": "一句话总结评价",
-  "strengths": ["优点1", "优点2"],
+  "strengths": ["优点1"],
   "weaknesses": ["不足1"],
   "suggestions": ["改进建议1"],
   "shouldPenalty": false,
@@ -94,27 +153,10 @@ ${chainOfThought || '无'}
     const startTime = Date.now();
 
     try {
-      const result = await this.llm.chatWithJson(
+      const result = await this.llm.chatWithJson<AnalysisResult>(
         'Qwen/Qwen2.5-7B-Instruct',
         [{ role: 'user', content: analysisPrompt }],
-        {
-          dimensions: {
-            accuracy: { score: 0, reason: '' },
-            completeness: { score: 0, reason: '' },
-            professionalism: { score: 0, reason: '' },
-            practicality: { score: 0, reason: '' },
-            clarity: { score: 0, reason: '' },
-          },
-          totalScore: 0,
-          quality: 'acceptable',
-          taskCompleted: false,
-          summary: '',
-          strengths: [],
-          weaknesses: [],
-          suggestions: [],
-          shouldPenalty: false,
-          penaltyReason: '',
-        }
+        {},
       );
 
       const analysis = result.data;
@@ -134,7 +176,8 @@ ${chainOfThought || '无'}
 
       if (!analysis.quality) {
         const s = analysis.totalScore;
-        analysis.quality = s >= 80 ? 'excellent' : s >= 60 ? 'good' : s >= 40 ? 'acceptable' : s >= 20 ? 'poor' : 'failing';
+        analysis.quality =
+          s >= 80 ? 'excellent' : s >= 60 ? 'good' : s >= 40 ? 'acceptable' : s >= 20 ? 'poor' : 'failing';
       }
 
       this.analysisHistory.push({
@@ -151,10 +194,10 @@ ${chainOfThought || '无'}
       });
 
       return analysis;
-    } catch (error) {
-      const hasContent = executionResult && executionResult.length > 50;
+    } catch {
+      const hasContent = Boolean(executionResult && executionResult.length > 50);
       const fallbackScore = hasContent ? 60 : 25;
-      const fallbackDimensions = {};
+      const fallbackDimensions: Record<string, DimensionScore> = {};
       for (const dim of SCORING_DIMENSIONS) {
         const base = hasContent ? dim.maxScore * 0.6 : dim.maxScore * 0.25;
         fallbackDimensions[dim.key] = {
@@ -178,10 +221,19 @@ ${chainOfThought || '无'}
     }
   }
 
-  async submitUserRating(agentAddress, userScore, comment) {
+  private requireSigner(): ethers.NonceManager {
+    if (!this.signer) throw new Error('Reputation signer 未注入，无法发起链上交易');
+    return this.signer;
+  }
+
+  async submitUserRating(
+    agentAddress: string,
+    userScore: number,
+    comment: string,
+  ): Promise<ChainCallResult> {
     try {
       const clampedScore = Math.min(100, Math.max(0, userScore));
-      const reputationWithSigner = this.contracts.reputation.connect(this.signer);
+      const reputationWithSigner = this.contracts.reputation.connect(this.requireSigner());
       const tx = await reputationWithSigner.addRating(agentAddress, clampedScore);
       await tx.wait();
 
@@ -199,37 +251,44 @@ ${chainOfThought || '无'}
 
       return { success: true, score: clampedScore };
     } catch (error) {
-      console.error('用户评分提交失败:', error.message);
-      return { success: false, error: error.message };
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('用户评分提交失败:', message);
+      return { success: false, error: message };
     }
   }
 
-  async submitRatingOnChain(agentAddress, score) {
+  async submitRatingOnChain(agentAddress: string, score: number): Promise<ChainCallResult> {
     try {
-      const reputationWithSigner = this.contracts.reputation.connect(this.signer);
+      const reputationWithSigner = this.contracts.reputation.connect(this.requireSigner());
       const tx = await reputationWithSigner.addRating(agentAddress, score);
       await tx.wait();
       return { success: true, txHash: tx.hash };
     } catch (error) {
-      console.error('链上评分失败:', error.message);
-      return { success: false, error: error.message };
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('链上评分失败:', message);
+      return { success: false, error: message };
     }
   }
 
-  async applyPenaltyOnChain(agentAddress, penalty, reason) {
+  async applyPenaltyOnChain(
+    agentAddress: string,
+    penalty: number,
+    reason: string,
+  ): Promise<ChainCallResult> {
     try {
-      const reputationWithSigner = this.contracts.reputation.connect(this.signer);
+      const reputationWithSigner = this.contracts.reputation.connect(this.requireSigner());
       const tx = await reputationWithSigner.applyPenalty(agentAddress, penalty, reason);
       await tx.wait();
       return { success: true, txHash: tx.hash };
     } catch (error) {
-      console.error('链上惩罚失败:', error.message);
-      return { success: false, error: error.message };
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('链上惩罚失败:', message);
+      return { success: false, error: message };
     }
   }
 
-  async getAgentPerformanceSummary() {
-    const summaries = [];
+  async getAgentPerformanceSummary(): Promise<Record<string, unknown>[]> {
+    const summaries: Record<string, unknown>[] = [];
     const count = await this.contracts.agentDID.agentCount();
 
     for (let i = 0; i < Number(count); i++) {
@@ -238,25 +297,24 @@ ${chainOfThought || '无'}
       const rep = await this.contracts.reputation.getReputation(addr);
 
       const recordIds = await this.contracts.auditLog.getRecordsByAgent(addr);
-      const records = [];
+      const records: { id: number; timestamp: number; status: number; rating: number }[] = [];
       for (const id of recordIds) {
         const rec = await this.contracts.auditLog.getRecord(Number(id));
         records.push({
-          id: Number(rec[0]),
-          timestamp: Number(rec[1]),
-          status: Number(rec[6]),
-          rating: Number(rec[8]),
+          id: Number(rec.id),
+          timestamp: Number(rec.timestamp),
+          status: Number(rec.executionStatus),
+          rating: Number(rec.reputationRating),
         });
       }
 
-      const successRate = records.length > 0
-        ? records.filter(r => r.status === 1).length / records.length
-        : 0;
+      const successRate =
+        records.length > 0 ? records.filter((r) => r.status === 1).length / records.length : 0;
 
-      const avgRating = Number(rep[2]);
-      const ratingCount = Number(rep[1]);
+      const avgRating = Number(rep.averageRating);
+      const ratingCount = Number(rep.ratingCount);
 
-      let reliabilityLevel;
+      let reliabilityLevel: string;
       if (ratingCount >= 3 && avgRating >= 80) reliabilityLevel = 'highly_reliable';
       else if (ratingCount >= 3 && avgRating >= 60) reliabilityLevel = 'reliable';
       else if (ratingCount >= 3 && avgRating < 60) reliabilityLevel = 'unreliable';
@@ -265,12 +323,12 @@ ${chainOfThought || '无'}
 
       summaries.push({
         address: addr,
-        did: agent[1],
-        qualification: agent[3],
-        isActive: agent[4],
+        did: agent.did,
+        qualification: agent.qualificationType,
+        isActive: agent.isActive,
         avgRating,
         ratingCount,
-        totalScore: Number(rep[0]),
+        totalScore: Number(rep.totalScore),
         totalTasks: records.length,
         successRate: Math.round(successRate * 100),
         trend: this.calculateTrend(records),
@@ -281,7 +339,7 @@ ${chainOfThought || '无'}
     return summaries;
   }
 
-  calculateTrend(records) {
+  private calculateTrend(records: { rating: number }[]): string {
     if (records.length < 2) return 'new';
     const recent = records.slice(-3);
     const older = records.slice(0, -3);
@@ -293,33 +351,31 @@ ${chainOfThought || '无'}
     return 'stable';
   }
 
-  async fullAnalysis(taskResult) {
+  async fullAnalysis(taskResult: TaskResult): Promise<{
+    analysis: AnalysisResult;
+    ratingResult: ChainCallResult;
+    penaltyResult: ChainCallResult | null;
+    timestamp: number;
+  }> {
     const analysis = await this.analyzeExecutionTrace(taskResult);
 
     const score = Math.min(100, Math.max(0, analysis.totalScore));
     const ratingResult = await this.submitRatingOnChain(taskResult.selectedAgent.address, score);
 
-    let penaltyResult = null;
+    let penaltyResult: ChainCallResult | null = null;
     if (analysis.shouldPenalty && score < 40) {
       const penalty = score < 20 ? 30 : 10;
       penaltyResult = await this.applyPenaltyOnChain(
         taskResult.selectedAgent.address,
         penalty,
-        analysis.penaltyReason || '执行质量不达标'
+        analysis.penaltyReason || '执行质量不达标',
       );
     }
 
-    return {
-      analysis,
-      ratingResult,
-      penaltyResult,
-      timestamp: Date.now(),
-    };
+    return { analysis, ratingResult, penaltyResult, timestamp: Date.now() };
   }
 
-  getAnalysisHistory() {
+  getAnalysisHistory(): ExecutionLogEntry[] {
     return this.analysisHistory;
   }
 }
-
-module.exports = { ReputationAnalyzerAgent, SCORING_DIMENSIONS };

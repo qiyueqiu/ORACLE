@@ -1,6 +1,41 @@
 {
+  "name": "oracle-agents",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ORACLE Agent 编排层（ESM + TypeScript）",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "start": "tsx src/api-server.ts",
+    "dev": "tsx watch src/api-server.ts",
+    "test": "mocha"
+  },
   "dependencies": {
+    "axios": "^1.16.0",
     "cors": "^2.8.6",
+    "dotenv": "^16.4.0",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/chai": "^4.3.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^22.0.0",
+    "@types/sinon": "^17.0.0",
+    "@types/supertest": "^6.0.0",
+    "axios-mock-adapter": "^2.1.0",
+    "chai": "^4.5.0",
+    "eslint": "^9.0.0",
+    "mocha": "^10.0.0",
+    "prettier": "^3.0.0",
+    "sinon": "^22.0.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^8.0.0"
   }
 }

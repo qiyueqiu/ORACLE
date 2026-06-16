@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { CircuitBreaker, LoadBalancer, RetryPolicy, Metrics } = require("../agents/mesh/sidecar");
+const { CircuitBreaker, LoadBalancer, RetryPolicy, Metrics } = require("../agents/mesh/sidecar.cjs");
 
 describe("Service Mesh Sidecar (M3)", function () {
     describe("CircuitBreaker", function () {

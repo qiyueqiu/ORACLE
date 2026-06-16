@@ -1,0 +1,113 @@
+/**
+ * SiliconFlowClient 单元测试（ESM + TypeScript）
+ * 覆盖 chat / chatWithJson happy path 与错误处理
+ *
+ * 用 instance-level axios + axios-mock-adapter 拦截，避免 axios 1.16 fetch adapter
+ * 兼容性问题（全局 mock adapter 会被 fetch adapter 绕过）
+ */
+import { expect } from 'chai';
+import axios from 'axios';
+import MockAdapter from 'axios-mock-adapter';
+import { SiliconFlowClient } from '../src/siliconflow-client.js';
+
+describe('agents/siliconflow-client', function () {
+  let client: SiliconFlowClient;
+  let mock: InstanceType<typeof MockAdapter>;
+  let instance: ReturnType<typeof axios.create>;
+
+  beforeEach(function () {
+    instance = axios.create();
+    mock = new MockAdapter(instance);
+    client = new SiliconFlowClient('test-api-key', instance);
+  });
+
+  afterEach(function () {
+    mock.restore();
+  });
+
+  describe('chat()', function () {
+    it('Should return content and usage on success', async function () {
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(200, {
+        choices: [{ message: { content: 'Hello, world!' } }],
+        usage: { total_tokens: 10 },
+        model: 'model-x',
+      });
+
+      const result = await client.chat('model-x', [{ role: 'user', content: 'hi' }]);
+      expect(result.content).to.equal('Hello, world!');
+      expect(result.usage.total_tokens).to.equal(10);
+      expect(result.model).to.equal('model-x');
+    });
+
+    it('Should pass model, messages, temperature, max_tokens to API', async function () {
+      let capturedBody: Record<string, unknown> | null = null;
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(function (config) {
+        capturedBody = JSON.parse(config.data as string) as Record<string, unknown>;
+        return [200, { choices: [{ message: { content: 'ok' } }], usage: {} }];
+      });
+
+      await client.chat('m', [{ role: 'user', content: 'x' }], { temperature: 0.7, max_tokens: 100 });
+      expect(capturedBody!.model).to.equal('m');
+      expect(capturedBody!.temperature).to.equal(0.7);
+      expect(capturedBody!.max_tokens).to.equal(100);
+    });
+
+    it('Should propagate network errors', async function () {
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').networkError();
+
+      try {
+        await client.chat('m', [{ role: 'user', content: 'x' }]);
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect((err as Error).message).to.match(/Network Error|ECONNREFUSED/i);
+      }
+    });
+
+    it('Should propagate API errors (4xx/5xx)', async function () {
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(401, { error: 'invalid api key' });
+
+      try {
+        await client.chat('m', [{ role: 'user', content: 'x' }]);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as Error).message).to.include('SiliconFlow API error');
+      }
+    });
+  });
+
+  describe('chatWithJson()', function () {
+    it('Should parse JSON content', async function () {
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(200, {
+        choices: [{ message: { content: '{"intent":"code","score":90}' } }],
+        usage: { total_tokens: 5 },
+      });
+
+      const schema = { intent: '', score: 0 };
+      const result = await client.chatWithJson('m', [{ role: 'user', content: 'x' }], schema);
+      expect((result.data as Record<string, unknown>).intent).to.equal('code');
+      expect((result.data as Record<string, unknown>).score).to.equal(90);
+    });
+
+    it('Should strip markdown code blocks', async function () {
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(200, {
+        choices: [{ message: { content: '```json\n{"x":1}\n```' } }],
+        usage: {},
+      });
+      const result = await client.chatWithJson('m', [{ role: 'user', content: 'x' }], { x: 0 });
+      expect((result.data as Record<string, unknown>).x).to.equal(1);
+    });
+
+    it('Should throw on invalid JSON', async function () {
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(200, {
+        choices: [{ message: { content: 'not json at all' } }],
+        usage: {},
+      });
+      try {
+        await client.chatWithJson('m', [{ role: 'user', content: 'x' }], { x: 0 });
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as Error).message).to.match(/JSON|parse/);
+      }
+    });
+  });
+});

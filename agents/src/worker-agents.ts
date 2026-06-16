@@ -3,9 +3,18 @@
  * 根据资质类型创建不同专长的 Agent
  */
 
-const { SiliconFlowClient } = require('./siliconflow-client');
+import { SiliconFlowClient } from './siliconflow-client.js';
+import type { Qualification, Candidate, ExecutionResult, ExecutionLogEntry } from './types.js';
 
-const QUALIFICATION_CONFIG = {
+export interface AgentConfig {
+  name: string;
+  icon: string;
+  systemPrompt: string;
+  complexModel: string;
+  simpleModel: string;
+}
+
+export const QUALIFICATION_CONFIG: Record<Qualification, AgentConfig> = {
   code_review: {
     name: '代码审查助手',
     icon: '🔍',
@@ -92,33 +101,46 @@ const QUALIFICATION_CONFIG = {
   },
 };
 
-class WorkerAgent {
-  constructor(apiKey, agentInfo, siliconflowClient) {
+interface ChainOfThoughtResult {
+  content: string;
+  chainOfThought: string;
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+}
+
+export interface WorkerContext {
+  selectedAgent?: string;
+  reputation?: number;
+}
+
+export class WorkerAgent {
+  private llm: SiliconFlowClient;
+  private info: Candidate;
+  private config: AgentConfig;
+  private executionLog: ExecutionLogEntry[];
+
+  constructor(apiKey: string, agentInfo: Candidate, siliconflowClient?: SiliconFlowClient) {
     this.llm = siliconflowClient || new SiliconFlowClient(apiKey);
     this.info = agentInfo;
-    this.config = QUALIFICATION_CONFIG[agentInfo.qualification] || QUALIFICATION_CONFIG.content;
+    this.config =
+      QUALIFICATION_CONFIG[agentInfo.qualification as Qualification] || QUALIFICATION_CONFIG.content;
     this.executionLog = [];
   }
 
-  async execute(taskDescription, context = {}) {
+  async execute(taskDescription: string, context: WorkerContext = {}): Promise<ExecutionResult> {
     const model = this.selectModel(taskDescription);
     const prompt = this.buildPrompt(taskDescription, context);
     const stepId = this.generateStepId();
     const startTime = Date.now();
 
     // LLM 调用加 30s 兜底超时（promise.race 强制）：防止 API 慢/挂导致 E2E 卡死
-    let result;
-    try {
-      result = await Promise.race([
-        this.chatWithChainOfThought(model, prompt),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('LLM timeout (30s)')), 30000)),
-      ]);
-    } catch (e) {
-      // 超时/失败：返回占位结果，调用方已有 try/catch 兜底
-      throw e;
-    }
+    const result = await Promise.race([
+      this.chatWithChainOfThought(model, prompt),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('LLM timeout (30s)')), 30000),
+      ),
+    ]);
 
-    const logEntry = {
+    const logEntry: ExecutionLogEntry = {
       stepId,
       stepType: 'llm_call',
       agent: this.info.did,
@@ -145,7 +167,7 @@ class WorkerAgent {
     };
   }
 
-  buildPrompt(taskDescription, context) {
+  private buildPrompt(taskDescription: string, context: WorkerContext): string {
     return `${this.config.systemPrompt}
 
 任务描述: ${taskDescription}
@@ -153,11 +175,15 @@ class WorkerAgent {
 ${context.selectedAgent ? `说明: 你是被系统选中的最优 Agent (${this.config.name})，信誉评分: ${context.reputation || 'N/A'}` : ''}`;
   }
 
-  async chatWithChainOfThought(model, prompt) {
-    const response = await this.llm.chat(model, [
-      { role: 'system', content: this.config.systemPrompt },
-      { role: 'user', content: prompt }
-    ], { temperature: 0.7, max_tokens: 2000 });
+  private async chatWithChainOfThought(model: string, prompt: string): Promise<ChainOfThoughtResult> {
+    const response = await this.llm.chat(
+      model,
+      [
+        { role: 'system', content: this.config.systemPrompt },
+        { role: 'user', content: prompt },
+      ],
+      { temperature: 0.7, max_tokens: 2000 },
+    );
 
     const content = response.content;
     let chainOfThought = '';
@@ -176,17 +202,16 @@ ${context.selectedAgent ? `说明: 你是被系统选中的最优 Agent (${this.
     return { content: result, chainOfThought, usage: response.usage };
   }
 
-  selectModel(taskDescription) {
-    const isComplex = taskDescription.length > 100 ||
+  private selectModel(taskDescription: string): string {
+    const isComplex =
+      taskDescription.length > 100 ||
       taskDescription.includes('分析') ||
       taskDescription.includes('详细') ||
       taskDescription.includes('复杂');
     return isComplex ? this.config.complexModel : this.config.simpleModel;
   }
 
-  generateStepId() {
+  private generateStepId(): string {
     return `0x${Buffer.from(`${Date.now()}-${Math.random()}`).toString('hex').slice(0, 64)}`;
   }
 }
-
-module.exports = { WorkerAgent, QUALIFICATION_CONFIG };

@@ -4,6 +4,7 @@
   "description": "ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution",
   "scripts": {
     "compile": "hardhat compile",
+    "typechain": "hardhat compile",
     "test": "hardhat test",
     "deploy": "hardhat run scripts/deploy.js --network localhost",
     "node": "hardhat node",
@@ -13,10 +14,13 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@playwright/test": "^1.59.1",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
     "axios-mock-adapter": "^2.1.0",
     "hardhat": "^2.22.0",
     "sinon": "^22.0.0",
-    "supertest": "^7.2.2"
+    "supertest": "^7.2.2",
+    "typechain": "^8.3.2"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.0",

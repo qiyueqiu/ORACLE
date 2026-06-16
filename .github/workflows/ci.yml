@@ -52,7 +52,7 @@ jobs:
           fi
 
   backend:
-    name: Backend (unit + integration)
+    name: Backend (TypeScript: typecheck + lint + tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,21 +60,22 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - name: Install root deps (for shared/abis.js)
+      - name: Install root deps
         run: npm ci
+      - name: Compile contracts + generate TypeChain types
+        run: npx hardhat compile
       - name: Install backend deps
-        run: |
-          cd agents
-          npm install express cors dotenv ethers axios sinon
+        working-directory: agents
+        run: npm install
+      - name: Type check (tsc --noEmit)
+        working-directory: agents
+        run: npm run typecheck
+      - name: Lint (eslint)
+        working-directory: agents
+        run: npm run lint
       - name: Run backend unit + integration tests
-        run: |
-          npx mocha \
-            test/logger.test.js \
-            test/siliconflow-client.test.js \
-            test/router-agent.test.js \
-            test/worker-agents.test.js \
-            test/reputation-analyzer.test.js \
-            test/api-server.test.js
+        working-directory: agents
+        run: npm test
 
   frontend:
     name: Frontend (typecheck + build)
@@ -115,6 +116,11 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
+      - name: Compile contracts + generate TypeChain types
+        run: npx hardhat compile
+      - name: Install backend deps
+        working-directory: agents
+        run: npm install
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Start hardhat node
@@ -125,9 +131,10 @@ jobs:
         run: npx hardhat run scripts/deploy.js --network localhost
         env:
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY || 'test-key' }}
-      - name: Start API server
+      - name: Start API server (tsx)
+        working-directory: agents
         run: |
-          node agents/api-server.js &
+          npm start &
           sleep 5
         env:
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY || 'test-key' }}

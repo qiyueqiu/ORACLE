@@ -1,33 +1,39 @@
 /**
- * ORACLE Agent API 服务（M1 改造版）
+ * ORACLE Agent API 服务（ESM + TypeScript 版）
  *
  * 集成：
  *  - dotenv 加载（消除硬编码密钥）
- *  - shared/abis.js 单一 ABI 来源
+ *  - TypeChain 生成的类型化合约接口（单一 ABI 来源）
  *  - 路由签名（改造 1）：Router 决策后签名上链
  *  - Worker 签名（改造 2）：Worker 执行后签名上链
  *  - 任务 commit-reveal（改造 3）：前端传 commitmentHash
  *  - API 认证（N4）：x-api-key + Rate Limit
- *  - 路由决策日志统一处理
  */
 
-require('dotenv').config({ path: require('path').resolve(__dirname, '..', '.env') });
-require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
+import { fileURLToPath } from 'url';
+import path from 'path';
+import dotenv from 'dotenv';
+import express, { type Request, type Response, type NextFunction } from 'express';
+import cors from 'cors';
+import { ethers } from 'ethers';
+import { AuditLog__factory } from '../../typechain-types/index.js';
+import { RouterAgent } from './router-agent.js';
+import { WorkerAgent, QUALIFICATION_CONFIG } from './worker-agents.js';
+import { ReputationAnalyzerAgent, SCORING_DIMENSIONS } from './reputation-analyzer.js';
+import type { AppConfig, Intent, Candidate, ExecutionResult, SSEEventData } from './types.js';
+import { toQualification } from './types.js';
 
-const express = require('express');
-const cors = require('cors');
-const { ethers } = require('ethers');
-const { AgentDIDABI, AuditLogABI, ReputationABI } = require('../shared/abis');
-const { RouterAgent } = require('./router-agent');
-const { WorkerAgent, QUALIFICATION_CONFIG } = require('./worker-agents');
-const { ReputationAnalyzerAgent, SCORING_DIMENSIONS } = require('./reputation-analyzer');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env') });
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // ===== 配置（全部从 env）=====
-function required(name, fallback) {
+function required(name: string, fallback?: string): string {
   const v = process.env[name];
   if (!v || v.trim() === '') {
     if (fallback !== undefined) return fallback;
@@ -36,7 +42,7 @@ function required(name, fallback) {
   return v;
 }
 
-const CONFIG = {
+const CONFIG: AppConfig = {
   PORT: Number(process.env.API_PORT || 3001),
   SILICONFLOW_API_KEY: required('SILICONFLOW_API_KEY'),
   PROVIDER_URL: required('PROVIDER_URL', 'http://localhost:8545'),
@@ -51,30 +57,22 @@ const CONFIG = {
   WORKER_DEMO_PK: required('WORKER_DEMO_PRIVATE_KEY'),
   EIP712_DOMAIN_NAME: process.env.EIP712_DOMAIN_NAME || 'ORACLE Agent Bus',
   EIP712_DOMAIN_VERSION: process.env.EIP712_DOMAIN_VERSION || '1',
-  ACCESS_KEYS: (process.env.API_ACCESS_KEYS || '').split(',').map(s => s.trim()).filter(Boolean),
+  ACCESS_KEYS: (process.env.API_ACCESS_KEYS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
   RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 60),
 };
 
 // ===== 签名者 & 合约实例 =====
 const sharedProvider = new ethers.JsonRpcProvider(CONFIG.PROVIDER_URL);
-
-// 路由器：决策后对 decisionDigest 签名
 const routerSigner = new ethers.Wallet(CONFIG.ROUTER_SIGNER_PK, sharedProvider);
 const routerWalletAddress = routerSigner.address;
-
-// 信誉分析：评分后调用 rateWeighted / applyPenalty
-const reputationSigner = new ethers.Wallet(CONFIG.REPUTATION_SIGNER_PK, sharedProvider);
-
-// Worker 默认签名者（演示用，真实环境由每个 Agent 提供）
 const workerDemoSigner = new ethers.Wallet(CONFIG.WORKER_DEMO_PK, sharedProvider);
 
-// 审计合约（直接连 auditSigner）
-const auditLogContract = new ethers.Contract(
-  CONFIG.CONTRACT_ADDRESSES.AuditLog,
-  AuditLogABI,
-  routerSigner
-);
+// 审计合约（TypeChain 类型化，连 routerSigner）
+const auditLogContract = AuditLog__factory.connect(CONFIG.CONTRACT_ADDRESSES.AuditLog, routerSigner);
 
 // EIP-712 domain
 const EIP712_DOMAIN = {
@@ -83,7 +81,6 @@ const EIP712_DOMAIN = {
   chainId: CONFIG.CHAIN_ID,
 };
 
-// 决策签名类型
 const ROUTER_DECISION_TYPES = {
   Decision: [
     { name: 'taskHash', type: 'bytes32' },
@@ -102,55 +99,77 @@ const WORKER_RESULT_TYPES = {
 };
 
 // ===== API 认证 + Rate Limit =====
-const inMemoryBuckets = new Map(); // ip -> [timestamps]
-function apiAuth(req, res, next) {
+const inMemoryBuckets = new Map<string, number[]>();
+
+function apiAuth(req: Request, res: Response, next: NextFunction): void {
   if (CONFIG.ACCESS_KEYS.length === 0) {
-    // 未配置 API_ACCESS_KEYS：开发模式仅打 warning；生产必须配置
+    // 未配置 API_ACCESS_KEYS：开发模式放行；生产必须配置（P6 改为 fail-secure）
     return next();
   }
   const key = req.header('x-api-key');
   if (!key || !CONFIG.ACCESS_KEYS.includes(key)) {
-    return res.status(401).json({ error: 'Unauthorized: missing or invalid x-api-key' });
+    res.status(401).json({ error: 'Unauthorized: missing or invalid x-api-key' });
+    return;
   }
   next();
 }
 
-function rateLimit(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+function rateLimit(req: Request, res: Response, next: NextFunction): void {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
   const cutoff = now - CONFIG.RATE_LIMIT_WINDOW_MS;
-  const bucket = (inMemoryBuckets.get(ip) || []).filter(t => t > cutoff);
+  const bucket = (inMemoryBuckets.get(ip) || []).filter((t) => t > cutoff);
   if (bucket.length >= CONFIG.RATE_LIMIT_MAX) {
-    return res.status(429).json({ error: 'Too many requests, please retry later' });
+    res.status(429).json({ error: 'Too many requests, please retry later' });
+    return;
   }
   bucket.push(now);
   inMemoryBuckets.set(ip, bucket);
   next();
 }
 
-// 仅对 mutation API 强制认证 + 限流
 app.use(['/api/dispatch', '/api/dispatch/stream', '/api/user-rating'], apiAuth, rateLimit);
 
 // ===== Agents =====
-const routerAgent = new RouterAgent(CONFIG.SILICONFLOW_API_KEY, CONFIG.PROVIDER_URL, CONFIG.CONTRACT_ADDRESSES);
-const reputationAnalyzer = new ReputationAnalyzerAgent(CONFIG.SILICONFLOW_API_KEY, CONFIG.PROVIDER_URL, CONFIG.CONTRACT_ADDRESSES);
+const routerAgent = new RouterAgent(
+  CONFIG.SILICONFLOW_API_KEY,
+  CONFIG.PROVIDER_URL,
+  CONFIG.CONTRACT_ADDRESSES,
+);
+const reputationAnalyzer = new ReputationAnalyzerAgent(
+  CONFIG.SILICONFLOW_API_KEY,
+  CONFIG.PROVIDER_URL,
+  CONFIG.CONTRACT_ADDRESSES,
+);
 reputationAnalyzer.setSigner(new ethers.Wallet(CONFIG.REPUTATION_SIGNER_PK, sharedProvider));
 
-const dispatchHistory = [];
+interface DispatchHistoryEntry {
+  taskId: string;
+  task: string;
+  selectedAgent: { did: string; address: string; qualification: string } | null;
+  result: string;
+  tokens: number;
+  reputationScore: number | null;
+  recordId: number | null;
+  timestamp: number;
+}
+const dispatchHistory: DispatchHistoryEntry[] = [];
 
 // ===== Routes =====
-app.get('/api/agent-types', (req, res) => {
+app.get('/api/agent-types', (_req: Request, res: Response) => {
   const types = Object.entries(QUALIFICATION_CONFIG).map(([key, config]) => ({
-    key, name: config.name, icon: config.icon,
+    key,
+    name: config.name,
+    icon: config.icon,
   }));
   res.json(types);
 });
 
-app.get('/api/scoring-dimensions', (req, res) => {
+app.get('/api/scoring-dimensions', (_req: Request, res: Response) => {
   res.json(SCORING_DIMENSIONS);
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: Date.now(),
@@ -160,22 +179,22 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.get('/api/dispatch/history', (req, res) => {
+app.get('/api/dispatch/history', (_req: Request, res: Response) => {
   res.json(dispatchHistory.slice(-50));
 });
 
-app.get('/api/reputation/summary', async (req, res) => {
+app.get('/api/reputation/summary', async (_req: Request, res: Response) => {
   try {
     const summaries = await reputationAnalyzer.getAgentPerformanceSummary();
     const history = reputationAnalyzer.getAnalysisHistory();
     res.json({ agents: summaries, analysisHistory: history.slice(-20), totalAnalysis: history.length });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
-app.post('/api/user-rating', async (req, res) => {
-  const { agentAddress, score, comment, taskId } = req.body;
+app.post('/api/user-rating', async (req: Request, res: Response) => {
+  const { agentAddress, score, comment } = req.body;
   if (!agentAddress || score === undefined) {
     return res.status(400).json({ error: '缺少 agentAddress 或 score' });
   }
@@ -186,12 +205,12 @@ app.post('/api/user-rating', async (req, res) => {
     const result = await reputationAnalyzer.submitUserRating(agentAddress, Number(score), comment || '');
     res.json({ success: true, score: result.score, message: '用户评价已提交到区块链' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 
 // ===== 主调度（流式） =====
-app.post('/api/dispatch/stream', async (req, res) => {
+app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -204,25 +223,33 @@ app.post('/api/dispatch/stream', async (req, res) => {
   }
 
   const taskId = `task-${Date.now()}`;
-  const sendEvent = (type, data) => {
-    try { res.write(`event: ${type}\n`); res.write(`data: ${JSON.stringify({ ...data, taskId })}\n\n`); } catch {}
+  const sendEvent = (type: string, data: SSEEventData): void => {
+    try {
+      res.write(`event: ${type}\n`);
+      res.write(`data: ${JSON.stringify({ ...data, taskId })}\n\n`);
+    } catch {
+      /* 客户端断开，P6 阶段改为结构化处理 */
+    }
   };
-  const safeEnd = () => { try { res.end(); } catch {} };
+  const safeEnd = (): void => {
+    try {
+      res.end();
+    } catch {
+      /* noop */
+    }
+  };
 
-  let selected = null;
-  let recordId = null;
-  let taskHash = ethers.keccak256(ethers.toUtf8Bytes(task));
+  let selected: Candidate | null = null;
+  let recordId: number | null = null;
+  const taskHash = ethers.keccak256(ethers.toUtf8Bytes(task));
   // 改造 A4：完整 commit-reveal —— commitment = keccak256(taskDescription || salt)
-  // 若前端未提供 salt，则随机生成 32 字节 salt 并随事件流回传，确保事后可揭示。
-  let finalSalt = taskSalt;
+  let finalSalt: string = taskSalt;
   if (!finalSalt || finalSalt === '0x' + '0'.repeat(64)) {
     finalSalt = ethers.hexlify(ethers.randomBytes(32));
   }
-  let finalCommitment = taskCommitment;
+  let finalCommitment: string = taskCommitment;
   if (!finalCommitment || finalCommitment === '0x' + '0'.repeat(64)) {
-    finalCommitment = ethers.keccak256(
-      ethers.solidityPacked(['string', 'bytes32'], [task, finalSalt])
-    );
+    finalCommitment = ethers.keccak256(ethers.solidityPacked(['string', 'bytes32'], [task, finalSalt]));
   }
 
   try {
@@ -231,16 +258,21 @@ app.post('/api/dispatch/stream', async (req, res) => {
       task,
       taskHash,
       taskCommitment: finalCommitment,
-      taskSalt: finalSalt,  // 改造 A4：salt 随事件流回传，供事后揭示
+      taskSalt: finalSalt,
     });
 
     // Phase 1: 意图解析
     sendEvent('phase', { phase: 'intent_parsing', message: '正在解析任务意图...', icon: '🧠' });
-    let intent;
+    let intent: Intent;
     try {
       intent = await routerAgent.parseIntent(task);
     } catch {
-      intent = { intent: task, requiredQualification: 'content', complexity: 'medium', priority: 'quality' };
+      intent = {
+        intent: task,
+        requiredQualification: 'content',
+        complexity: 'medium',
+        priority: 'quality',
+      };
       sendEvent('intent_parsed', { intent, detail: '意图解析使用默认值（LLM 不可用）' });
     }
     if (!intent.requiredQualification) intent.requiredQualification = 'content';
@@ -251,13 +283,19 @@ app.post('/api/dispatch/stream', async (req, res) => {
 
     // Phase 2: 候选 Agent
     sendEvent('phase', { phase: 'getting_candidates', message: '从链上获取候选 Agent...', icon: '🔍' });
-    let candidates;
-    try { candidates = await routerAgent.getCandidateAgents(intent.requiredQualification); }
-    catch { candidates = []; }
+    let candidates: Candidate[];
+    try {
+      candidates = await routerAgent.getCandidateAgents(intent.requiredQualification);
+    } catch {
+      candidates = [];
+    }
     sendEvent('candidates', {
-      candidates: candidates.map(c => ({
-        did: c.did, address: c.address, qualification: c.qualification,
-        avgRating: c.avgRating, ratingCount: c.ratingCount,
+      candidates: candidates.map((c) => ({
+        did: c.did,
+        address: c.address,
+        qualification: c.qualification,
+        avgRating: c.avgRating,
+        ratingCount: c.ratingCount,
       })),
       detail: `找到 ${candidates.length} 个候选 Agent`,
     });
@@ -273,16 +311,24 @@ app.post('/api/dispatch/stream', async (req, res) => {
     let ranked = candidates;
     let decision = '';
     try {
-      const evalResult = await routerAgent.evaluateCandidates(candidates, intent, intent.requiredQualification);
+      const evalResult = await routerAgent.evaluateCandidates(
+        candidates,
+        intent,
+        intent.requiredQualification,
+      );
       ranked = evalResult.candidates;
       decision = evalResult.decision;
     } catch {
-      ranked.forEach((c) => { c.score = 50 + Math.random() * 30; c.reason = '规则评分'; });
+      // 注意：P1 将删除此 Math.random 兜底，统一为确定性 ruleScore
+      ranked.forEach((c) => {
+        c.score = 50 + Math.random() * 30;
+        c.reason = '规则评分';
+      });
       ranked.sort((a, b) => b.score - a.score);
       decision = 'LLM 不可用，使用规则匹配';
     }
     sendEvent('evaluated', {
-      rankings: ranked.map(c => ({ did: c.did, address: c.address, score: c.score, reason: c.reason })),
+      rankings: ranked.map((c) => ({ did: c.did, address: c.address, score: c.score, reason: c.reason })),
       detail: decision,
     });
 
@@ -291,31 +337,33 @@ app.post('/api/dispatch/stream', async (req, res) => {
     selected = routeResult.agent;
     const timestamp = Math.floor(Date.now() / 1000);
     const rankedAgentsHash = ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(
-        ['address[]'],
-        [ranked.map(c => c.address)]
-      )
+      ethers.AbiCoder.defaultAbiCoder().encode(['address[]'], [ranked.map((c) => c.address)]),
     );
-    // EIP-712 签名决策
     const decisionValue = {
-      taskHash: taskHash,
+      taskHash,
       rankedAgents: rankedAgentsHash,
       topAgent: selected.address,
       timestamp,
     };
-    let decisionDigest, decisionSig;
+    let decisionDigest: string;
+    let decisionSig: string;
     try {
       decisionDigest = ethers.TypedDataEncoder.hash(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
       decisionSig = await routerSigner.signTypedData(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
     } catch (sigErr) {
-      sendEvent('error', { error: `路由签名失败: ${sigErr.message}` });
+      sendEvent('error', {
+        error: `路由签名失败: ${sigErr instanceof Error ? sigErr.message : String(sigErr)}`,
+      });
       safeEnd();
       return;
     }
     sendEvent('selected', {
       selected: {
-        did: selected.did, address: selected.address,
-        qualification: selected.qualification, score: selected.score, avgRating: selected.avgRating,
+        did: selected.did,
+        address: selected.address,
+        qualification: selected.qualification,
+        score: selected.score,
+        avgRating: selected.avgRating,
       },
       decision,
       routerSigner: routerWalletAddress,
@@ -324,16 +372,19 @@ app.post('/api/dispatch/stream', async (req, res) => {
     });
 
     // Phase 5: Worker 执行
-    const agentConfig = QUALIFICATION_CONFIG[selected.qualification] || QUALIFICATION_CONFIG.content;
+    const agentConfig =
+      QUALIFICATION_CONFIG[toQualification(selected.qualification)] || QUALIFICATION_CONFIG.content;
     sendEvent('phase', {
       phase: 'executing',
       message: `${agentConfig.icon} ${agentConfig.name}正在执行任务...`,
-      icon: agentConfig.icon, agentType: selected.qualification, agentName: agentConfig.name,
+      icon: agentConfig.icon,
+      agentType: selected.qualification,
+      agentName: agentConfig.name,
     });
 
     const workerAgent = new WorkerAgent(CONFIG.SILICONFLOW_API_KEY, selected);
     sendEvent('thinking', { message: 'Agent 正在思考...' });
-    let executionResult;
+    let executionResult: ExecutionResult;
     try {
       executionResult = await workerAgent.execute(task, {
         selectedAgent: selected.did,
@@ -341,7 +392,7 @@ app.post('/api/dispatch/stream', async (req, res) => {
       });
     } catch (execErr) {
       executionResult = {
-        result: `执行失败: ${execErr.message}`,
+        result: `执行失败: ${execErr instanceof Error ? execErr.message : String(execErr)}`,
         chainOfThought: '',
         executionLog: [],
         tokens: 0,
@@ -349,56 +400,78 @@ app.post('/api/dispatch/stream', async (req, res) => {
         agentType: selected.qualification,
       };
     }
-    sendEvent('chain_of_thought', { chainOfThought: executionResult.chainOfThought, model: executionResult.model });
-    sendEvent('result', { result: executionResult.result, model: executionResult.model, agentType: executionResult.agentType });
+    sendEvent('chain_of_thought', {
+      chainOfThought: executionResult.chainOfThought,
+      model: executionResult.model,
+    });
+    sendEvent('result', {
+      result: executionResult.result,
+      model: executionResult.model,
+      agentType: executionResult.agentType,
+    });
 
     // Phase 6: 链上记录（带签名）
     sendEvent('phase', { phase: 'logging', message: '记录审计日志到区块链...', icon: '⛓️' });
     try {
-      // 6.1 写 logScheduleWithDecision
       const tx1 = await auditLogContract.logScheduleWithDecision(
-        routerWalletAddress,  // requester = router signer
+        routerWalletAddress,
         selected.address,
         finalCommitment,
-        0,  // QUALIFIED
+        0,
         routerWalletAddress,
         decisionDigest,
-        decisionSig
+        decisionSig,
       );
       const r1 = await tx1.wait();
-      recordId = Number(r1.logs[0].topics[1]);  // recordId 是 topic1
+      recordId = Number(r1!.logs[0].topics[1]);
 
-      // 6.2 写 updateExecutionWithSig（Worker 签名）
-      // 改造 A7：resultDigest 绑定 recordId + result + timestamp，杜绝跨记录重放
-      // 公式：resultDigest = keccak256(abi.encode(recordId, keccak256(result), timestamp))
       const resultHash = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
       const resultDigest = ethers.keccak256(
         ethers.AbiCoder.defaultAbiCoder().encode(
           ['uint256', 'bytes32', 'uint256'],
-          [recordId, resultHash, timestamp]
-        )
+          [recordId, resultHash, timestamp],
+        ),
       );
-      const workerSig = await workerDemoSigner.signTypedData(
-        EIP712_DOMAIN, WORKER_RESULT_TYPES,
-        { recordId, resultDigest, timestamp }
-      );
+      const workerSig = await workerDemoSigner.signTypedData(EIP712_DOMAIN, WORKER_RESULT_TYPES, {
+        recordId,
+        resultDigest,
+        timestamp,
+      });
       const tx2 = await auditLogContract.updateExecutionWithSig(
-        recordId, 1, executionResult.result, resultDigest, workerSig
+        recordId,
+        1,
+        executionResult.result,
+        resultDigest,
+        workerSig,
       );
       await tx2.wait();
 
-      sendEvent('logged', { message: '审计日志已记录到区块链（含 Router + Worker 签名）', recordId, txHash: r1.hash });
+      sendEvent('logged', {
+        message: '审计日志已记录到区块链（含 Router + Worker 签名）',
+        recordId,
+        txHash: r1!.hash,
+      });
     } catch (logErr) {
-      sendEvent('logged', { message: `审计日志记录异常: ${logErr.message}` });
+      sendEvent('logged', {
+        message: `审计日志记录异常: ${logErr instanceof Error ? logErr.message : String(logErr)}`,
+      });
     }
 
     // Phase 7: 信誉分析
-    sendEvent('phase', { phase: 'reputation_analysis', message: '信誉分析 Agent 正在评估执行质量...', icon: '📊' });
+    sendEvent('phase', {
+      phase: 'reputation_analysis',
+      message: '信誉分析 Agent 正在评估执行质量...',
+      icon: '📊',
+    });
     let reputationAnalysis = null;
     try {
       reputationAnalysis = await reputationAnalyzer.fullAnalysis({
         task,
-        selectedAgent: { did: selected.did, address: selected.address, qualification: selected.qualification },
+        selectedAgent: {
+          did: selected.did,
+          address: selected.address,
+          qualification: selected.qualification,
+        },
         executionResult: executionResult.result,
         chainOfThought: executionResult.chainOfThought,
         executionLog: executionResult.executionLog,
@@ -406,15 +479,20 @@ app.post('/api/dispatch/stream', async (req, res) => {
       const a = reputationAnalysis.analysis;
       sendEvent('reputation_analyzed', {
         analysis: {
-          totalScore: a.totalScore, quality: a.quality, taskCompleted: a.taskCompleted,
-          summary: a.summary, dimensions: a.dimensions,
-          strengths: a.strengths, weaknesses: a.weaknesses, suggestions: a.suggestions,
+          totalScore: a.totalScore,
+          quality: a.quality,
+          taskCompleted: a.taskCompleted,
+          summary: a.summary,
+          dimensions: a.dimensions,
+          strengths: a.strengths,
+          weaknesses: a.weaknesses,
+          suggestions: a.suggestions,
         },
         ratingOnChain: reputationAnalysis.ratingResult.success,
         penaltyApplied: reputationAnalysis.penaltyResult?.success || false,
         detail: `信誉评分: ${a.totalScore}/100, 质量: ${a.quality}`,
       });
-    } catch (err) {
+    } catch {
       sendEvent('reputation_analyzed', {
         analysis: { totalScore: 0, quality: 'unknown', summary: '信誉分析暂不可用' },
         ratingOnChain: false,
@@ -433,8 +511,11 @@ app.post('/api/dispatch/stream', async (req, res) => {
     });
 
     dispatchHistory.push({
-      taskId, task,
-      selectedAgent: selected ? { did: selected.did, address: selected.address, qualification: selected.qualification } : null,
+      taskId,
+      task,
+      selectedAgent: selected
+        ? { did: selected.did, address: selected.address, qualification: selected.qualification }
+        : null,
       result: executionResult.result,
       tokens: executionResult.tokens,
       reputationScore: reputationAnalysis?.analysis?.totalScore || null,
@@ -442,13 +523,15 @@ app.post('/api/dispatch/stream', async (req, res) => {
       timestamp: Date.now(),
     });
   } catch (error) {
-    sendEvent('error', { error: `任务处理出现异常，请稍后重试。详情: ${error.message}` });
+    sendEvent('error', {
+      error: `任务处理出现异常，请稍后重试。详情: ${error instanceof Error ? error.message : String(error)}`,
+    });
   }
   safeEnd();
 });
 
 // ===== 阻塞式调度 =====
-app.post('/api/dispatch', async (req, res) => {
+app.post('/api/dispatch', async (req: Request, res: Response) => {
   const { task, taskCommitment } = req.body;
   if (!task) return res.status(400).json({ error: '任务描述不能为空' });
   const taskId = `task-${Date.now()}`;
@@ -459,41 +542,68 @@ app.post('/api/dispatch', async (req, res) => {
       selectedAgent: routingResult.agent.did,
       reputation: routingResult.agent.avgRating,
     });
-    // 阻塞模式也走签名路径
     const taskHash = ethers.keccak256(ethers.toUtf8Bytes(task));
-    const commitment = taskCommitment && taskCommitment !== '0x' + '0'.repeat(64)
-      ? taskCommitment : taskHash;
+    const commitment =
+      taskCommitment && taskCommitment !== '0x' + '0'.repeat(64) ? taskCommitment : taskHash;
     const rankedAgentsHash = ethers.keccak256(ethers.toUtf8Bytes('rank-' + taskId));
     const timestamp = Math.floor(Date.now() / 1000);
-    const decisionValue = { taskHash, rankedAgents: rankedAgentsHash, topAgent: routingResult.agent.address, timestamp };
-    const decisionDigest = ethers.TypedDataEncoder.hash(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
-    const decisionSig = await routerSigner.signTypedData(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
+    const decisionValue = {
+      taskHash,
+      rankedAgents: rankedAgentsHash,
+      topAgent: routingResult.agent.address,
+      timestamp,
+    };
+    const decisionDigest = ethers.TypedDataEncoder.hash(
+      EIP712_DOMAIN,
+      ROUTER_DECISION_TYPES,
+      decisionValue,
+    );
+    const decisionSig = await routerSigner.signTypedData(
+      EIP712_DOMAIN,
+      ROUTER_DECISION_TYPES,
+      decisionValue,
+    );
     const tx1 = await auditLogContract.logScheduleWithDecision(
-      routerWalletAddress, routingResult.agent.address, commitment, 0,
-      routerWalletAddress, decisionDigest, decisionSig
+      routerWalletAddress,
+      routingResult.agent.address,
+      commitment,
+      0,
+      routerWalletAddress,
+      decisionDigest,
+      decisionSig,
     );
     const r1 = await tx1.wait();
-    const recordId = Number(r1.logs[0].topics[1]);
+    const recordId = Number(r1!.logs[0].topics[1]);
     const resultHash = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
-    // 改造 A7：resultDigest 绑定 recordId + result + timestamp，与流式路径及公式 (\ref{eq:worker-result-digest}) 严格一致
     const resultDigest = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
         ['uint256', 'bytes32', 'uint256'],
-        [recordId, resultHash, timestamp]
-      )
+        [recordId, resultHash, timestamp],
+      ),
     );
-    const workerSig = await workerDemoSigner.signTypedData(
-      EIP712_DOMAIN, WORKER_RESULT_TYPES,
-      { recordId, resultDigest, timestamp }
+    const workerSig = await workerDemoSigner.signTypedData(EIP712_DOMAIN, WORKER_RESULT_TYPES, {
+      recordId,
+      resultDigest,
+      timestamp,
+    });
+    const tx2 = await auditLogContract.updateExecutionWithSig(
+      recordId,
+      1,
+      executionResult.result,
+      resultDigest,
+      workerSig,
     );
-    const tx2 = await auditLogContract.updateExecutionWithSig(recordId, 1, executionResult.result, resultDigest, workerSig);
     await tx2.wait();
 
     res.json({
-      success: true, taskId, task,
+      success: true,
+      taskId,
+      task,
       selectedAgent: {
-        did: routingResult.agent.did, address: routingResult.agent.address,
-        qualification: routingResult.agent.qualification, reputation: routingResult.agent.avgRating,
+        did: routingResult.agent.did,
+        address: routingResult.agent.address,
+        qualification: routingResult.agent.qualification,
+        reputation: routingResult.agent.avgRating,
       },
       decisionReason: routingResult.reason,
       result: executionResult.result,
@@ -505,24 +615,19 @@ app.post('/api/dispatch', async (req, res) => {
       routerSigner: routerWalletAddress,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message, taskId });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error), taskId });
   }
 });
 
-app.listen(CONFIG.PORT, () => {
-  console.log(`🚀 ORACLE Agent API 服务运行在 http://localhost:${CONFIG.PORT}`);
-  console.log(`📡 API 端点:`);
-  console.log(`   POST /api/dispatch/stream - 流式执行 (含信誉分析)`);
-  console.log(`   POST /api/dispatch - 阻塞式执行`);
-  console.log(`   POST /api/user-rating - 用户评价`);
-  console.log(`   GET  /api/reputation/summary - 信誉概况`);
-  console.log(`   GET  /api/scoring-dimensions - 评分维度说明`);
-  console.log(`   GET  /api/agent-types - Agent 类型列表`);
-  console.log(`   GET  /api/dispatch/history - 调度历史`);
-  console.log(`   GET  /api/health - 健康检查`);
-  console.log(`🔐 API 认证: ${CONFIG.ACCESS_KEYS.length > 0 ? '已启用' : '未启用（生产必须设置 API_ACCESS_KEYS）'}`);
-  console.log(`🛡️  Rate Limit: ${CONFIG.RATE_LIMIT_MAX} req / ${CONFIG.RATE_LIMIT_WINDOW_MS}ms`);
-  console.log(`🔑 Router Signer: ${routerWalletAddress}`);
-});
+// 仅在直接运行时启动监听（测试通过 supertest 导入 app，不应自动 listen）
+const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMainModule) {
+  app.listen(CONFIG.PORT, () => {
+    console.log(`🚀 ORACLE Agent API 服务运行在 http://localhost:${CONFIG.PORT}`);
+    console.log(`🔐 API 认证: ${CONFIG.ACCESS_KEYS.length > 0 ? '已启用' : '未启用（生产必须设置 API_ACCESS_KEYS）'}`);
+    console.log(`🛡️  Rate Limit: ${CONFIG.RATE_LIMIT_MAX} req / ${CONFIG.RATE_LIMIT_WINDOW_MS}ms`);
+    console.log(`🔑 Router Signer: ${routerWalletAddress}`);
+  });
+}
 
-module.exports = app;
+export default app;

@@ -33,8 +33,11 @@ contract RouterRegistry is Ownable {
     mapping(bytes32 => uint256) public votes;  // keccak256(recordId, digest) => votes
     mapping(bytes32 => mapping(address => bool)) public hasVoted;
 
-    uint256 public quorumBps = 6667;  // 2/3
+    uint256 public quorumBps = 6666;  // 2/3（6666 使 ceil(3·6666/10000)=2，与 3-router 2/3 一致）
     uint256 public constant MAX_QUORUM_BPS = 10000;
+    // P6：共识达成的最小活跃 Router 数下限。低于此值不发 ConsensusReached，
+    // 防止 1-2 个 Router 时单票即"共识"（floor 取整 + 兜底为 1 的旧 bug）。
+    uint256 public constant MIN_ROUTERS = 3;
 
     event RouterRegistered(address indexed pubKey, uint256 stake);
     event RouterDeactivated(address indexed pubKey);
@@ -104,11 +107,16 @@ contract RouterRegistry is Ownable {
         hasVoted[key][msg.sender] = true;
         uint256 newVotes = ++votes[key];
 
-        uint256 required = (activeRouterCount * quorumBps) / MAX_QUORUM_BPS;
-        if (activeRouterCount == 0 || required == 0) required = 1;
+        // P6：ceil 取整（向上取整），避免 floor 在少数 Router 时把门槛降到 1。
+        // required = ⌈activeRouterCount · quorumBps / 10000⌉
+        uint256 required = activeRouterCount == 0
+            ? 1
+            : (activeRouterCount * quorumBps + MAX_QUORUM_BPS - 1) / MAX_QUORUM_BPS;
 
         emit VoteSubmitted(recordId, decisionDigest, msg.sender, newVotes, required);
-        if (newVotes >= required) {
+        // P6：仅当活跃 Router 数 ≥ MIN_ROUTERS 且票数达标才宣布共识，
+        // 杜绝单/双 Router 时的"伪共识"。
+        if (newVotes >= required && activeRouterCount >= MIN_ROUTERS) {
             emit ConsensusReached(recordId, decisionDigest, newVotes);
         }
     }

@@ -328,6 +328,8 @@ describe("AuditLog Contract", function () {
             expect(await auditLog.getExecutionStatusString(0)).to.equal("Pending");
             expect(await auditLog.getExecutionStatusString(1)).to.equal("Success");
             expect(await auditLog.getExecutionStatusString(2)).to.equal("Failed");
+            expect(await auditLog.getExecutionStatusString(3)).to.equal("Timeout");
+            expect(await auditLog.getExecutionStatusString(4)).to.equal("Disputed");
         });
     });
 

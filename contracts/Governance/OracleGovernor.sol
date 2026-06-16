@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title OracleGovernor（M3 改造 8 - 链上治理）
@@ -20,7 +21,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  *   - 改造理由：完整 OZ Governor 与 OZ ERC20Votes 在当前依赖树中冲突
  *   - 未来工作（见论文 7.2 节）：平滑切换到 OZ Governor Bravo/Alpha
  */
-contract OracleGovernor is Ownable {
+contract OracleGovernor is Ownable, ReentrancyGuard {
     struct Proposal {
         uint256 id;
         address proposer;
@@ -40,6 +41,7 @@ contract OracleGovernor is Ownable {
     uint256 public votingPeriod;          // 投票期（秒）
     uint256 public timelockDelay;         // 通过后延迟执行（秒）
     uint256 public quorumBps;             // 法定票数基点
+    uint256 public constant MIN_TIMELOCK_DELAY = 1 hours;  // P6：timelock 下限，防 owner 清零延迟
 
     uint256 public proposalCount;
     mapping(uint256 => Proposal) public proposals;
@@ -106,7 +108,7 @@ contract OracleGovernor is Ownable {
         emit ProposalQueued(proposalId, p.eta);
     }
 
-    function execute(uint256 proposalId) external {
+    function execute(uint256 proposalId) external nonReentrant {
         Proposal storage p = proposals[proposalId];
         require(p.eta > 0, "Not queued");
         require(block.timestamp >= p.eta, "Timelock not elapsed");
@@ -141,6 +143,6 @@ contract OracleGovernor is Ownable {
     // Owner 治理：调整参数
     function setProposalThreshold(uint256 v) external onlyOwner { proposalThreshold = v; }
     function setVotingPeriod(uint256 v) external onlyOwner { votingPeriod = v; }
-    function setTimelockDelay(uint256 v) external onlyOwner { timelockDelay = v; }
+    function setTimelockDelay(uint256 v) external onlyOwner { require(v >= MIN_TIMELOCK_DELAY, "Timelock below floor"); timelockDelay = v; }
     function setQuorumBps(uint256 v) external onlyOwner { quorumBps = v; }
 }

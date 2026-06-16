@@ -14,6 +14,7 @@ import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 
 // 在 import api-server 之前设置必要环境变量
+process.env.NODE_ENV = 'development';
 process.env.SILICONFLOW_API_KEY = 'test-key';
 process.env.ROUTER_SIGNER_PRIVATE_KEY =
   '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';

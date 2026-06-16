@@ -150,7 +150,9 @@ export type SSEEventType =
   | 'logged'
   | 'reputation_analyzed'
   | 'complete'
-  | 'error';
+  | 'error'
+  | 'heartbeat'
+  | 'timeout';
 
 /** SSE 事件 payload（taskId 由发送器统一注入） */
 export type SSEEventData = Record<string, unknown>;

@@ -2,19 +2,16 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title UUPSUpgradeable（极简接口 - M2 阶段）
- * @notice 仅提供 upgrade 入口与接口签名；生产部署需在 OZ v5 + contracts-upgradeable 基础上完整实现
- *
- * 当前状态（M2 阶段）：
- *   - 已实现：抽象类定义、upgradeTo / upgradeToAndCall 接口签名
- *   - 待 M2 收尾或后续：在依赖冲突解决后切换到完整 UUPS（含 storage slot、Initializable 集成）
- *
- * 用法：
- *   - 继承：`contract MyContract is Ownable, UUPSUpgradeable { ... }`
- *   - 实现 `_authorizeUpgrade`（默认仅 owner 可升级）
- *   - 部署时 `initialize()` 一次
- *
- * 真实部署前需替换为完整 OZ UUPSUpgradeable（含 ERC1967 storage slot）。
+ * @title UUPSUpgradeable（⚠ 非功能性占位 STUB）
+ * @notice 非功能性占位实现 —— 本合约**不写** ERC1967 实现槽。
+ *   upgradeTo 仅 emit Upgraded 事件，代理存储从不更新；
+ *   upgradeToAndCall 对 newImplementation 直接做裸 delegatecall，并非经代理槽。
+ *   这**不是**可用的 UUPS 代理。本仓库中**没有任何生产合约**继承本合约
+ *   （仅测试 mock contracts/mocks/MockUUPSContract.sol 使用）。
+ * @dev 实现真实可升级性的方法：安装 @openzeppelin/contracts-upgradeable，
+ *   将 solc 提升到 >=0.8.22，使用 OZ 的 deployProxy/upgradeProxy。
+ *   在任何将部署到真实网络的合约中**禁止**继承本占位。
+ * @custom:security DO NOT USE IN PRODUCTION — non-functional upgrade stub.
  */
 abstract contract UUPSUpgradeable {
     address private immutable __self = address(this);
@@ -23,6 +20,7 @@ abstract contract UUPSUpgradeable {
 
     /**
      * @notice 升级到新实现（仅 owner）
+     * @dev ⚠ 非功能性：emit Upgraded 但**不更新** ERC1967 槽。
      * @param newImplementation 新实现合约地址
      */
     function upgradeTo(address newImplementation) external virtual {
@@ -31,6 +29,9 @@ abstract contract UUPSUpgradeable {
         emit Upgraded(newImplementation);
     }
 
+    /**
+     * @dev ⚠ 非功能性：裸 delegatecall，不经 ERC1967 代理槽。
+     */
     function upgradeToAndCall(address newImplementation, bytes calldata data) external payable virtual {
         _authorizeUpgrade(newImplementation);
         (bool ok, ) = newImplementation.delegatecall(data);

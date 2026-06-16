@@ -85,4 +85,35 @@ describe("RouterRegistry (M3 multi-router consensus)", function () {
         await expect(registry.connect(owner).setQuorumBps(10001))
             .to.be.revertedWith("Invalid quorum");
     });
+
+    // P6：quorum 地板修复 —— MIN_ROUTERS + ceil 取整，杜绝少数 Router 伪共识
+    describe("Quorum floor (P6 hardening)", function () {
+        it("Should NOT reach consensus with fewer than MIN_ROUTERS (3)", async function () {
+            await registry.connect(owner).registerRouter(r1.address, 0);
+            await registry.connect(owner).registerRouter(r2.address, 0);
+            const digest = ethers.keccak256(ethers.toUtf8Bytes("d"));
+            await registry.connect(r1).submitVote(1, digest);
+            // 2 个 Router 全投，但 activeRouterCount < MIN_ROUTERS → 不共识
+            await expect(registry.connect(r2).submitVote(1, digest)).to.not.emit(
+                registry,
+                "ConsensusReached",
+            );
+        });
+
+        it("Should require ceil(quorum) votes — 1 of 3 is not consensus, 2 of 3 is", async function () {
+            await registry.connect(owner).registerRouter(r1.address, 0);
+            await registry.connect(owner).registerRouter(r2.address, 0);
+            await registry.connect(owner).registerRouter(r3.address, 0);
+            const digest = ethers.keccak256(ethers.toUtf8Bytes("d2"));
+            // ceil(3*6666/10000)=2；1 票不够
+            await expect(registry.connect(r1).submitVote(2, digest)).to.not.emit(
+                registry,
+                "ConsensusReached",
+            );
+            await expect(registry.connect(r2).submitVote(2, digest)).to.emit(
+                registry,
+                "ConsensusReached",
+            );
+        });
+    });
 });

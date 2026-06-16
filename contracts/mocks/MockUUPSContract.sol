@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title MockUUPSContract - 用于测试 UUPSUpgradeable 的最小实现
+ * @dev ⚠ 测试专用 mock，继承非功能性 UUPSUpgradeable 占位。**禁止部署到真实网络**。
  * 注：极简版 UUPSUpgradeable 不含 Initializable，本合约直接部署即可使用
  */
 contract MockUUPSContract is UUPSUpgradeable, Ownable {

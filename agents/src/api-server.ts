@@ -21,6 +21,7 @@ import { RouterAgent, ruleScore } from './router-agent.js';
 import { WorkerAgent, QUALIFICATION_CONFIG } from './worker-agents.js';
 import { ReputationAnalyzerAgent, SCORING_DIMENSIONS } from './reputation-analyzer.js';
 import { makeWorkerSigningProvider } from './worker-signing.js';
+import { makeApiAuth, makeRateLimit, sendError } from './security.js';
 import type { AppConfig, Intent, Candidate, ExecutionResult, SSEEventData } from './types.js';
 import { toQualification } from './types.js';
 
@@ -71,6 +72,9 @@ const CONFIG: AppConfig = {
   RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 60),
 };
 
+// SSE 任务超时（ms）
+const SSE_TASK_TIMEOUT_MS = Number(process.env.SSE_TASK_TIMEOUT_MS || 120000);
+
 // ===== 签名者 & 合约实例 =====
 const sharedProvider = new ethers.JsonRpcProvider(CONFIG.PROVIDER_URL);
 const routerSigner = new ethers.Wallet(CONFIG.ROUTER_SIGNER_PK, sharedProvider);
@@ -113,37 +117,31 @@ const WORKER_RESULT_TYPES = {
   ],
 };
 
-// ===== API 认证 + Rate Limit =====
-const inMemoryBuckets = new Map<string, number[]>();
+// ===== P6：鉴权 + 限流（从 security.ts） =====
+const revokedKeys = (process.env.API_REVOKED_KEYS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-function apiAuth(req: Request, res: Response, next: NextFunction): void {
-  if (CONFIG.ACCESS_KEYS.length === 0) {
-    // 未配置 API_ACCESS_KEYS：开发模式放行；生产必须配置（P6 改为 fail-secure）
-    return next();
-  }
-  const key = req.header('x-api-key');
-  if (!key || !CONFIG.ACCESS_KEYS.includes(key)) {
-    res.status(401).json({ error: 'Unauthorized: missing or invalid x-api-key' });
-    return;
-  }
-  next();
-}
+const isDev = process.env.NODE_ENV === 'development';
 
-function rateLimit(req: Request, res: Response, next: NextFunction): void {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const cutoff = now - CONFIG.RATE_LIMIT_WINDOW_MS;
-  const bucket = (inMemoryBuckets.get(ip) || []).filter((t) => t > cutoff);
-  if (bucket.length >= CONFIG.RATE_LIMIT_MAX) {
-    res.status(429).json({ error: 'Too many requests, please retry later' });
-    return;
-  }
-  bucket.push(now);
-  inMemoryBuckets.set(ip, bucket);
-  next();
-}
+const apiAuth = makeApiAuth({
+  accessKeys: CONFIG.ACCESS_KEYS,
+  revokedKeys,
+  isDev,
+});
 
-app.use(['/api/dispatch', '/api/dispatch/stream', '/api/user-rating'], apiAuth, rateLimit);
+const rateLimitMiddleware = makeRateLimit({
+  windowMs: CONFIG.RATE_LIMIT_WINDOW_MS,
+  max: CONFIG.RATE_LIMIT_MAX,
+  maxTrackedKeys: 10000,
+});
+
+app.use(
+  ['/api/dispatch', '/api/dispatch/stream', '/api/user-rating'],
+  apiAuth as (req: Request, res: Response, next: NextFunction) => void,
+  rateLimitMiddleware as (req: Request, res: Response, next: NextFunction) => void,
+);
 
 // ===== Agents =====
 const routerAgent = new RouterAgent(
@@ -204,7 +202,7 @@ app.get('/api/reputation/summary', async (_req: Request, res: Response) => {
     const history = reputationAnalyzer.getAnalysisHistory();
     res.json({ agents: summaries, analysisHistory: history.slice(-20), totalAnalysis: history.length });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    sendError(res, 500, 'REPUTATION_SUMMARY_FAILED', error);
   }
 });
 
@@ -220,7 +218,7 @@ app.post('/api/user-rating', async (req: Request, res: Response) => {
     const result = await reputationAnalyzer.submitUserRating(agentAddress, Number(score), comment || '');
     res.json({ success: true, score: result.score, message: '用户评价已提交到区块链' });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    sendError(res, 500, 'USER_RATING_FAILED', error);
   }
 });
 
@@ -238,20 +236,61 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
   }
 
   const taskId = `task-${Date.now()}`;
+
+  // ── P6 SSE 健壮化 ──
+  let aborted = false;
+  req.on('close', () => {
+    aborted = true;
+  });
+
   const sendEvent = (type: string, data: SSEEventData): void => {
+    // 写前检查可写状态
+    if (res.writableEnded || res.destroyed) return;
     try {
       res.write(`event: ${type}\n`);
       res.write(`data: ${JSON.stringify({ ...data, taskId })}\n\n`);
-    } catch {
-      /* 客户端断开，P6 阶段改为结构化处理 */
+    } catch (writeErr) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-server',
+          event: 'sse_write_error',
+          type,
+          detail: writeErr instanceof Error ? writeErr.message : String(writeErr),
+        }),
+      );
     }
   };
+
   const safeEnd = (): void => {
+    if (res.writableEnded || res.destroyed) return;
     try {
       res.end();
     } catch {
       /* noop */
     }
+  };
+
+  // 心跳：每 15s 发一次，防止代理/浏览器超时断连
+  const heartbeatInterval = setInterval(() => {
+    if (res.writableEnded || res.destroyed) {
+      clearInterval(heartbeatInterval);
+      return;
+    }
+    sendEvent('heartbeat', {});
+  }, 15000);
+
+  // 任务超时
+  let taskTimedOut = false;
+  const taskTimeoutHandle = setTimeout(() => {
+    taskTimedOut = true;
+    sendEvent('timeout', { code: 'TASK_TIMEOUT' });
+    safeEnd();
+  }, SSE_TASK_TIMEOUT_MS);
+
+  const cleanup = (): void => {
+    clearInterval(heartbeatInterval);
+    clearTimeout(taskTimeoutHandle);
   };
 
   let selected: Candidate | null = null;
@@ -295,6 +334,7 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       intent,
       detail: `识别到意图: ${intent.intent}, 所需资质: ${intent.requiredQualification}`,
     });
+    if (aborted || taskTimedOut) { cleanup(); return; }
 
     // Phase 2: 候选 Agent
     sendEvent('phase', { phase: 'getting_candidates', message: '从链上获取候选 Agent...', icon: '🔍' });
@@ -314,9 +354,11 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       })),
       detail: `找到 ${candidates.length} 个候选 Agent`,
     });
+    if (aborted || taskTimedOut) { cleanup(); return; }
 
     if (candidates.length === 0) {
       sendEvent('error', { error: '没有找到匹配的候选 Agent，请先注册 Agent' });
+      cleanup();
       safeEnd();
       return;
     }
@@ -355,6 +397,7 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       rankings: ranked.map((c) => ({ did: c.did, address: c.address, score: c.score, reason: c.reason })),
       detail: decision,
     });
+    if (aborted || taskTimedOut) { cleanup(); return; }
 
     // Phase 4: 决策 + 路由签名
     const routeResult = await routerAgent.makeDecision(ranked, decision);
@@ -376,12 +419,12 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       decisionDigest = ethers.TypedDataEncoder.hash(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
       decisionSig = await routerSigner.signTypedData(EIP712_DOMAIN, ROUTER_DECISION_TYPES, decisionValue);
     } catch (sigErr) {
-      sendEvent('error', {
-        error: `路由签名失败: ${sigErr instanceof Error ? sigErr.message : String(sigErr)}`,
-      });
+      sendError(res, 500, 'ROUTER_SIG_FAILED', sigErr);
+      cleanup();
       safeEnd();
       return;
     }
+    if (aborted || taskTimedOut) { cleanup(); return; }
     sendEvent('selected', {
       selected: {
         did: selected.did,
@@ -434,6 +477,7 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       model: executionResult.model,
       agentType: executionResult.agentType,
     });
+    if (aborted || taskTimedOut) { cleanup(); return; }
 
     // Phase 6: 链上记录（带签名）
     sendEvent('phase', { phase: 'logging', message: '记录审计日志到区块链...', icon: '⛓️' });
@@ -485,9 +529,18 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       });
     } catch (logErr) {
       sendEvent('logged', {
-        message: `审计日志记录异常: ${logErr instanceof Error ? logErr.message : String(logErr)}`,
+        message: '审计日志记录异常，任务结果仍有效',
       });
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-server',
+          event: 'audit_log_failed',
+          detail: logErr instanceof Error ? logErr.message : String(logErr),
+        }),
+      );
     }
+    if (aborted || taskTimedOut) { cleanup(); return; }
 
     // Phase 7: 信誉分析
     sendEvent('phase', {
@@ -555,11 +608,11 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
       timestamp: Date.now(),
     });
   } catch (error) {
-    sendEvent('error', {
-      error: `任务处理出现异常，请稍后重试。详情: ${error instanceof Error ? error.message : String(error)}`,
-    });
+    sendError(res, 500, 'DISPATCH_STREAM_FAILED', error);
+  } finally {
+    cleanup();
+    safeEnd();
   }
-  safeEnd();
 });
 
 // ===== 阻塞式调度 =====
@@ -648,7 +701,7 @@ app.post('/api/dispatch', async (req: Request, res: Response) => {
       routerSigner: routerWalletAddress,
     });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : String(error), taskId });
+    sendError(res, 500, 'DISPATCH_FAILED', error);
   }
 });
 

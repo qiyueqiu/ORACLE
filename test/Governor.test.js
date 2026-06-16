@@ -89,4 +89,18 @@ describe("OracleGovernor (M3 改造 8)", function () {
         await governor.connect(voter1).castVote(1, true);
         await expect(governor.connect(voter1).castVote(1, true)).to.be.revertedWith("Already voted");
     });
+
+    // P6：timelock 下限,防 owner 把延迟清零绕过时间锁
+    describe("Timelock floor (P6 hardening)", function () {
+        it("Should reject setTimelockDelay below MIN_TIMELOCK_DELAY (1h)", async function () {
+            await expect(governor.connect(owner).setTimelockDelay(3599)).to.be.revertedWith(
+                "Timelock below floor",
+            );
+        });
+
+        it("Should accept setTimelockDelay at or above 1h", async function () {
+            await governor.connect(owner).setTimelockDelay(3600);
+            expect(await governor.timelockDelay()).to.equal(3600);
+        });
+    });
 });

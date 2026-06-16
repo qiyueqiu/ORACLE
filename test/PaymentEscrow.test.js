@@ -256,4 +256,47 @@ describe("PaymentEscrow Contract (改造 6)", function () {
                 .to.be.revertedWithCustomError(escrow, "OwnableUnauthorizedAccount");
         });
     });
+
+    // P6：恶意 ERC20 重入回归测试 —— 证明 nonReentrant + CEI 挡住重入
+    describe("Reentrancy guard (malicious ERC20)", function () {
+        let evil, evilEscrow;
+
+        beforeEach(async function () {
+            const Evil = await ethers.getContractFactory("MaliciousERC20");
+            evil = await Evil.deploy();
+            await evil.waitForDeployment();
+
+            const PaymentEscrow = await ethers.getContractFactory("PaymentEscrow");
+            evilEscrow = await PaymentEscrow.deploy(await evil.getAddress());
+            await evilEscrow.waitForDeployment();
+
+            await evil.mint(payer.address, ethers.parseEther("1000"));
+        });
+
+        it("refund: re-entrant call is blocked, status advances exactly once", async function () {
+            const recordId = 1;
+            const shortDeadline = (await ethers.provider.getBlock("latest")).timestamp + 100;
+            await evil.connect(payer).approve(await evilEscrow.getAddress(), ethers.parseEther("100"));
+            await evilEscrow
+                .connect(payer)
+                .fundTask(recordId, worker.address, shortDeadline, ethers.parseEther("100"));
+
+            // 过 deadline 使 refund 可调
+            await ethers.provider.send("evm_increaseTime", [200]);
+            await ethers.provider.send("evm_mine", []);
+
+            // 武装恶意 token：在 transfer（refund 内的退款转账）时回调 refund 重入
+            await evil.arm(await evilEscrow.getAddress(), recordId, true);
+
+            // 外层 refund 应成功完成（内层重入被 nonReentrant 拒绝并被 try/catch 吞掉）
+            await expect(evilEscrow.connect(payer).refund(recordId)).to.emit(evilEscrow, "TaskRefunded");
+
+            // 验证：确实触发过重入尝试，但状态只推进到 Refunded 一次（payer 只收到一次退款）
+            expect(await evil.reentered()).to.equal(true);
+            const esc = await evilEscrow.getEscrow(recordId);
+            expect(esc.status).to.equal(3); // Refunded
+            // payer 余额：fund 扣 100，refund 退回 100 → 净额回到初始 1000
+            expect(await evil.balanceOf(payer.address)).to.equal(ethers.parseEther("1000"));
+        });
+    });
 });

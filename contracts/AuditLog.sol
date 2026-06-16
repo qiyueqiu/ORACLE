@@ -4,6 +4,11 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+// P6：dispute-gated slash 所需的最小接口（内联，免单独文件/import 顺序问题）
+interface IAgentStake {
+    function slash(address agent, string calldata reason) external returns (uint256);
+}
+
 /**
  * @title AuditLog (改造 1 + 2 + 3)
  * @notice 调度审计日志：路由签名 + Worker 签名 + commit-reveal
@@ -31,7 +36,8 @@ contract AuditLog is Ownable {
         PENDING,
         SUCCESS,
         FAILED,
-        TIMEOUT
+        TIMEOUT,
+        DISPUTED   // P6：追加于末尾（不移位 0-3），仅经 raiseDispute 进入
     }
 
     struct ScheduleRecord {
@@ -67,6 +73,18 @@ contract AuditLog is Ownable {
     uint256 public recordCount;
     uint256 public nextRecordId = 1;
     address public agentDID;  // 用于读取 Agent 公钥做 ecrecover
+
+    // ===== P6：dispute-gated slash =====
+    // slash 只能经「requester 对 FAILED 记录发起争议 → owner 裁定 slash」两步触发，
+    // 且受 slashEnabled 断路器保护（默认 false）。updateExecution* 绝不触发 slash。
+    address public agentStake;          // AgentStake 合约地址
+    bool public slashEnabled;           // 断路器：默认 false，owner 显式开启才允许 slash
+    mapping(uint256 => address) public disputeRaiser;  // recordId => 发起争议者
+
+    event AgentStakeUpdated(address indexed newAgentStake);
+    event SlashEnabledUpdated(bool enabled);
+    event DisputeRaised(uint256 indexed recordId, address indexed raiser);
+    event DisputeResolved(uint256 indexed recordId, bool slashAgent, uint256 slashAmount);
 
     // ===== P1-C2：EIP-712 链上重建（防跨链/跨合约重放）=====
     // 旧实现直接对调用方传入的 digest 做 ecrecover，不绑定 chainId/verifyingContract，
@@ -155,6 +173,44 @@ contract AuditLog is Ownable {
         agentDID = _agentDID;
     }
 
+    // ===== P6：slash 治理旋钮 =====
+    function setAgentStake(address _agentStake) external onlyOwner {
+        agentStake = _agentStake;
+        emit AgentStakeUpdated(_agentStake);
+    }
+
+    function setSlashEnabled(bool enabled) external onlyOwner {
+        slashEnabled = enabled;
+        emit SlashEnabledUpdated(enabled);
+    }
+
+    // ===== P6：争议流程（dispute-gated slash）=====
+    // 仅 requester 可对自己的、且执行状态为 FAILED 的记录发起争议。
+    function raiseDispute(uint256 recordId) external {
+        ScheduleRecord storage r = records[recordId];
+        require(r.exists, "Record not found");
+        require(msg.sender == r.requester, "Only requester");
+        require(r.executionStatus == ExecutionStatus.FAILED, "Only FAILED records");
+        r.executionStatus = ExecutionStatus.DISPUTED;
+        disputeRaiser[recordId] = msg.sender;
+        emit DisputeRaised(recordId, msg.sender);
+    }
+
+    // 仅 owner（未来可换 Governor）裁定争议。仅当 slashAgent && slashEnabled && agentStake 已设
+    // 才真正调用 AgentStake.slash。裁定后记录状态回到 FAILED（争议关闭，结果仍是失败）。
+    // CEI：先改状态再外部调用；AgentStake.slash 自身 nonReentrant 且转账给其 owner，不回流本合约。
+    function resolveDispute(uint256 recordId, bool slashAgent) external onlyOwner returns (uint256 slashAmount) {
+        ScheduleRecord storage r = records[recordId];
+        require(r.exists, "Record not found");
+        require(r.executionStatus == ExecutionStatus.DISPUTED, "Not disputed");
+        r.executionStatus = ExecutionStatus.FAILED;
+        slashAmount = 0;
+        if (slashAgent && slashEnabled && agentStake != address(0)) {
+            slashAmount = IAgentStake(agentStake).slash(r.targetAgent, "Dispute resolved: agent slashed");
+        }
+        emit DisputeResolved(recordId, slashAgent, slashAmount);
+    }
+
     // ===== 旧版兼容 API（无签名）=====
     function logSchedule(
         address requester,
@@ -238,6 +294,7 @@ contract AuditLog is Ownable {
         string calldata result
     ) external {
         require(records[recordId].exists, "Record not found");
+        require(status != ExecutionStatus.DISPUTED, "Use raiseDispute");
         records[recordId].executionStatus = status;
         records[recordId].executionResult = result;
         emit ExecutionUpdated(recordId, status, result, address(0));
@@ -256,6 +313,7 @@ contract AuditLog is Ownable {
         bytes calldata workerSig
     ) external {
         require(records[recordId].exists, "Record not found");
+        require(status != ExecutionStatus.DISPUTED, "Use raiseDispute");
         require(workerSig.length == 65, "Invalid sig length");
         bytes32 digest = _hashResult(recordId, resultDigest, resultTimestamp);
         address recovered = digest.recover(workerSig);
@@ -426,6 +484,7 @@ contract AuditLog is Ownable {
         if (status == ExecutionStatus.SUCCESS) return "Success";
         if (status == ExecutionStatus.FAILED) return "Failed";
         if (status == ExecutionStatus.TIMEOUT) return "Timeout";
+        if (status == ExecutionStatus.DISPUTED) return "Disputed";
         return "Unknown";
     }
 }

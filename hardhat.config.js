@@ -1,5 +1,7 @@
 require("@nomicfoundation/hardhat-toolbox");
-require("dotenv").config();
+// override:true —— 以根 .env 文件为单一来源，覆盖 shell 中可能残留的旧 export
+// （如本地开发时 export 的 PROVIDER_URL=localhost / CHAIN_ID=31337）。
+require("dotenv").config({ override: true });
 
 const {
   DEPLOYER_PRIVATE_KEY,
@@ -13,6 +15,13 @@ const {
   BASESCAN_API_KEY,
   POLYGONSCAN_API_KEY,
 } = process.env;
+
+// 私钥规范化：补 0x 前缀（hardhat accounts 要求带前缀）
+const _normPk = (k) => (k ? (k.startsWith("0x") ? k : "0x" + k) : null);
+// Sepolia 账户：优先 SEPOLIA_DEPLOYER_PRIVATE_KEY，回退到项目已有的 ROUTER_SIGNER_KEY
+// （单账户模式：同一个充值钱包扮演 deployer/router/worker/requester，见 benchmark.js 的 fallback）
+const SEPOLIA_PK = _normPk(SEPOLIA_DEPLOYER_PRIVATE_KEY || process.env.ROUTER_SIGNER_KEY);
+const SEPOLIA_ACCOUNTS = SEPOLIA_PK ? [SEPOLIA_PK] : [];
 
 module.exports = {
   solidity: {
@@ -49,11 +58,13 @@ module.exports = {
     hardhat: { chainId: 31337 },
 
     // 公共测试网（M2 N8：多网络部署支持）
-    sepolia: SEPOLIA_RPC_URL ? {
-      url: SEPOLIA_RPC_URL,
+    // url 优先用 SEPOLIA_RPC_URL，回退到项目已填的 PROVIDER_URL（单一来源），再回退公共 RPC
+    sepolia: {
+      url: SEPOLIA_RPC_URL || process.env.PROVIDER_URL || "https://rpc.sepolia.org",
       chainId: 11155111,
-      accounts: SEPOLIA_DEPLOYER_PRIVATE_KEY ? [SEPOLIA_DEPLOYER_PRIVATE_KEY] : [],
-    } : { url: "https://rpc.sepolia.org", chainId: 11155111 },
+      accounts: SEPOLIA_ACCOUNTS,
+      timeout: 60000, // 60s：容忍 Sepolia 出块 + Alchemy 偶发慢响应
+    },
     baseSepolia: BASE_SEPOLIA_RPC_URL ? {
       url: BASE_SEPOLIA_RPC_URL,
       chainId: 84532,

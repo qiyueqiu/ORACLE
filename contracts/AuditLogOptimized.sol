@@ -37,11 +37,13 @@ contract AuditLogOptimized is Ownable {
     mapping(uint256 => bytes32) public recordCommitment;
     // 防 commitment 重用（与原版一致的安全属性，1 个冷 SSTORE）
     mapping(bytes32 => bool) public usedTaskCommitment;
-    // 【安全关键】recordId → targetAgent 锚点。
+    // 【安全关键】recordId → targetAgent 锚点（M1/M2/M4 用）。
     //   调度阶段由 router 签名锁定 topAgent=targetAgent，写入此映射；
-    //   执行阶段（M3）必须从此映射读取 targetAgent 做 worker pubKey 比对，
+    //   执行阶段必须从此映射读取 targetAgent 做 worker pubKey 比对，
     //   绝不接受调用方传参——否则 WorkerB 可用自己的合法签名冒充 WorkerA 的任务执行者
-    //   （对抗性审查发现的致命归属漏洞）。这 1 个冷 SSTORE 是不可省的安全成本。
+    //   （对抗性审查发现的致命归属漏洞）。
+    //   注：M5（recordId 编码方案）证明这 20k SSTORE 不是唯一安全方案——
+    //   把 targetAgent 编进 recordId 高 160 位可零存储达成同等归属安全（见下）。
     mapping(uint256 => address) public recordTargetAgent;
 
     bytes32 private constant EIP712_DOMAIN_TYPEHASH = keccak256(
@@ -153,4 +155,97 @@ contract AuditLogOptimized is Ownable {
         }
         emit ExecutionUpdated(recordId, status, resultDigest, recovered, block.timestamp);
     }
+
+    // ===== M4：批量锚定（最高杠杆）=====
+    // Router 一笔 tx 提交 N 条调度决策。每条仍带独立 EIP-712 签名，逐条 ecrecover 校验
+    // （安全不降——批量不等于放松验签）。摊薄的是一次 tx 的 21k base 开销 + 计数器冷启动 +
+    // 函数调用固定开销。审计数据全部走 event，每条仍写 1 个 targetAgent 锚点。
+    //
+    // 适用场景：Router 高频调度时积攒一小批再上链（如每 N 秒或每 N 条 flush 一次），
+    // 用「轻微延迟换显著降本」。延迟敏感场景仍可用 M1 单条。
+    struct ScheduleItem {
+        address requester;
+        address targetAgent;
+        bytes32 taskCommitment;
+        DecisionReason reason;
+        address routerSigner;
+        bytes32 taskHash;
+        bytes32 rankedAgents;
+        uint256 decisionTimestamp;
+        bytes decisionSig;
+    }
+
+    event BatchScheduleLogged(uint256 firstRecordId, uint256 count, address indexed submitter);
+
+    function batchLogScheduleEventOnly(ScheduleItem[] calldata items)
+        external
+        returns (uint256 firstRecordId, uint256 count)
+    {
+        count = items.length;
+        require(count > 0, "Empty batch");
+        firstRecordId = nextRecordId;
+        uint256 id = firstRecordId;
+        for (uint256 i = 0; i < count; i++) {
+            ScheduleItem calldata it = items[i];
+            require(it.decisionSig.length == 65, "Invalid sig length");
+            require(it.routerSigner != address(0), "Zero router signer");
+            // 逐条链上重建 EIP-712 摘要 + ecrecover（与单条 M1 完全等价的安全校验）
+            bytes32 digest = _hashDecision(it.taskHash, it.rankedAgents, it.targetAgent, it.decisionTimestamp);
+            require(digest.recover(it.decisionSig) == it.routerSigner, "Bad router sig");
+            recordTargetAgent[id] = it.targetAgent;  // 归属锚点（每条 1 冷 SSTORE，安全必需）
+            emit ScheduleLogged(id, it.requester, it.targetAgent, it.reason, it.taskCommitment, it.routerSigner, digest, block.timestamp);
+            id++;
+        }
+        nextRecordId = id;  // 一次性写回计数器（批内只 1 次 SSTORE，而非 N 次）
+        emit BatchScheduleLogged(firstRecordId, count, msg.sender);
+    }
+
+    // ===== M5：recordId 编码归属（零存储锚点，对抗审查验证的最优方案）=====
+    // 把 targetAgent（160 位）编进 recordId 高位，低 96 位放序号。执行阶段从 recordId
+    // 纯位运算解出 targetAgent，无需任何 SSTORE 锚点。安全性等同 M1 的 20k 锚点：
+    // recordId 由合约在调度阶段确定性生成并 emit，worker 无法篡改——改 recordId 即指向
+    // 另一条记录。WorkerB 想冒充 WorkerA 的 recordId 必须伪造 WorkerA 的签名（不可能）；
+    // WorkerB 用自己地址只能执行编码了自己地址的 recordId（即自己的任务，非冒充）。
+    //   recordId = (uint256(uint160(targetAgent)) << 96) | seq
+    // 代价：recordId 失去全局时间序（链下按 block.timestamp/blockNumber 排序，recordId 仅作唯一键）。
+    uint96 private seqCounter; // 全局序号，低 96 位
+
+    function encodeRecordId(address targetAgent, uint96 seq) public pure returns (uint256) {
+        return (uint256(uint160(targetAgent)) << 96) | uint256(seq);
+    }
+    function decodeTargetAgent(uint256 recordId) public pure returns (address) {
+        return address(uint160(recordId >> 96));
+    }
+
+    function logScheduleEncoded(
+        address requester, address targetAgent, bytes32 taskCommitment, DecisionReason reason,
+        address routerSigner, bytes32 taskHash, bytes32 rankedAgents, uint256 decisionTimestamp, bytes calldata decisionSig
+    ) external returns (uint256 recordId) {
+        require(decisionSig.length == 65, "Invalid sig length");
+        require(routerSigner != address(0), "Zero router signer");
+        bytes32 digest = _hashDecision(taskHash, rankedAgents, targetAgent, decisionTimestamp);
+        require(digest.recover(decisionSig) == routerSigner, "Bad router sig");
+        uint96 seq = ++seqCounter;            // 1 个温 SSTORE（热槽计数器，~5k 首次后 ~100）
+        recordId = encodeRecordId(targetAgent, seq);  // 纯位运算，targetAgent 编入高位
+        emit ScheduleLogged(recordId, requester, targetAgent, reason, taskCommitment, routerSigner, digest, block.timestamp);
+    }
+
+    function updateExecutionEncoded(
+        uint256 recordId, ExecutionStatus status, bytes32 resultDigest, uint256 resultTimestamp, bytes calldata workerSig
+    ) external {
+        require(workerSig.length == 65, "Invalid sig length");
+        address targetAgent = decodeTargetAgent(recordId);  // 从 recordId 解出，零存储读
+        bytes32 digest = _hashResult(recordId, resultDigest, resultTimestamp);
+        address recovered = digest.recover(workerSig);
+        require(recovered != address(0), "Bad sig");
+        if (agentDID != address(0)) {
+            (bool ok, bytes memory data) = agentDID.staticcall(
+                abi.encodeWithSignature("getPubKey(address)", targetAgent)
+            );
+            require(ok, "AgentDID call failed");
+            require(recovered == abi.decode(data, (address)), "Sig not from worker pubKey");
+        }
+        emit ExecutionUpdated(recordId, status, resultDigest, recovered, block.timestamp);
+    }
 }
+

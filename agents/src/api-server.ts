@@ -16,11 +16,11 @@ import dotenv from 'dotenv';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { ethers } from 'ethers';
-import { AuditLog__factory } from '../../typechain-types/index.js';
 import { RouterAgent, ruleScore } from './router-agent.js';
 import { WorkerAgent, QUALIFICATION_CONFIG } from './worker-agents.js';
 import { ReputationAnalyzerAgent, SCORING_DIMENSIONS } from './reputation-analyzer.js';
 import { makeWorkerSigningProvider } from './worker-signing.js';
+import { makeAuditAdapter } from './audit-adapter.js';
 import { makeApiAuth, makeRateLimit, sendError } from './security.js';
 import type { AppConfig, Intent, Candidate, ExecutionResult, SSEEventData } from './types.js';
 import { toQualification } from './types.js';
@@ -53,7 +53,10 @@ const CONFIG: AppConfig = {
     AgentDID: required('AGENT_DID_ADDRESS'),
     AuditLog: required('AUDIT_LOG_ADDRESS'),
     Reputation: required('REPUTATION_ADDRESS'),
+    AuditLogOptimized: process.env.AUDIT_LOG_OPTIMIZED_ADDRESS || undefined,
   },
+  // 审计写入模式：full（原版，默认）| optimized（M5 编码，省 ~79% gas）
+  AUDIT_MODE: (process.env.AUDIT_MODE === 'optimized' ? 'optimized' : 'full') as 'full' | 'optimized',
   ROUTER_SIGNER_PK: required('ROUTER_SIGNER_KEY', process.env.ROUTER_SIGNER_PRIVATE_KEY),
   REPUTATION_SIGNER_PK: required('REPUTATION_SIGNER_PRIVATE_KEY'),
   // P2：worker 不再由单一密钥代签；模式 demo（助记词派生）| relay（转发预签名）
@@ -79,6 +82,10 @@ const SSE_TASK_TIMEOUT_MS = Number(process.env.SSE_TASK_TIMEOUT_MS || 120000);
 const sharedProvider = new ethers.JsonRpcProvider(CONFIG.PROVIDER_URL);
 const routerSigner = new ethers.Wallet(CONFIG.ROUTER_SIGNER_PK, sharedProvider);
 const routerWalletAddress = routerSigner.address;
+// 审计合约发交易用 NonceManager 包装：每次 dispatch 连发 2 笔 tx（logSchedule + updateExecution），
+// 并发/快速连续请求时裸 Wallet 会复用相同 nonce 导致 "Nonce too low" 全部失败。
+// NonceManager 在本地维护递增 nonce，串行化 tx 提交。EIP-712 签名仍用裸 routerSigner（不涉 nonce）。
+const routerTxSigner = new ethers.NonceManager(routerSigner);
 
 // P2（修复 C1）：worker 不再由单一密钥代签。后端是无特权中继——按选中 agent 的地址
 // 取「该 agent 自己的」签名器；demo 模式由助记词确定性派生，链上 pubKey 与之绑定，
@@ -87,17 +94,31 @@ const workerSigning = makeWorkerSigningProvider(CONFIG.WORKER_SIGNING_MODE, {
   mnemonic: CONFIG.WORKER_DEMO_MNEMONIC,
 });
 
-// 审计合约（TypeChain 类型化，连 routerSigner）
-const auditLogContract = AuditLog__factory.connect(CONFIG.CONTRACT_ADDRESSES.AuditLog, routerSigner);
+// 审计合约（适配器层，按 AUDIT_MODE 选 full / optimized）
+// full：原版 AuditLog（13 字段 SSTORE，可回读，~407k gas）
+// optimized：AuditLogOptimized M5 编码（event-only，零锚点，~85k gas，省 ~79%）
+const auditAdapter = makeAuditAdapter(
+  CONFIG.AUDIT_MODE,
+  {
+    AuditLog: CONFIG.CONTRACT_ADDRESSES.AuditLog,
+    AuditLogOptimized: CONFIG.CONTRACT_ADDRESSES.AuditLogOptimized,
+  },
+  routerTxSigner,
+);
+// EIP-712 verifyingContract 必须指向「实际写入的合约」，否则链上重建摘要与签名不匹配。
+const auditVerifyingContract =
+  CONFIG.AUDIT_MODE === 'optimized' && CONFIG.CONTRACT_ADDRESSES.AuditLogOptimized
+    ? CONFIG.CONTRACT_ADDRESSES.AuditLogOptimized
+    : CONFIG.CONTRACT_ADDRESSES.AuditLog;
 
-// EIP-712 domain（P1-C2：必须与 AuditLog.domainSeparator() 完全一致）
-// 合约固定 name="ORACLE AuditLog" / version="1"，并含 verifyingContract=AuditLog 地址，
+// EIP-712 domain（P1-C2：必须与目标合约 domainSeparator() 完全一致）
+// 合约固定 name="ORACLE AuditLog" / version="1"，并含 verifyingContract，
 // 防止签名跨链（chainId）、跨合约（verifyingContract）重放。
 const EIP712_DOMAIN = {
   name: 'ORACLE AuditLog',
   version: '1',
   chainId: CONFIG.CHAIN_ID,
-  verifyingContract: CONFIG.CONTRACT_ADDRESSES.AuditLog,
+  verifyingContract: auditVerifyingContract,
 };
 
 const ROUTER_DECISION_TYPES = {
@@ -189,6 +210,8 @@ app.get('/api/health', (_req: Request, res: Response) => {
     chainId: CONFIG.CHAIN_ID,
     routerSigner: routerWalletAddress,
     apiAuthRequired: CONFIG.ACCESS_KEYS.length > 0,
+    auditMode: auditAdapter.mode,
+    auditReadback: auditAdapter.supportsOnChainReadback,
   });
 });
 
@@ -238,9 +261,13 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
   const taskId = `task-${Date.now()}`;
 
   // ── P6 SSE 健壮化 ──
+  // 客户端断连检测：必须监听 res 的 close（响应连接关闭），而非 req 的 close。
+  // req('close') 在请求体被完全读取后即触发（POST body 读完就关可读端），
+  // 不代表客户端断开 —— 监听它会导致每个正常 POST 在第一阶段后被误判为 aborted。
+  // res('close') 只在底层连接真正关闭时触发；若此时响应未正常 end，才是客户端中途断开。
   let aborted = false;
-  req.on('close', () => {
-    aborted = true;
+  res.on('close', () => {
+    if (!res.writableEnded) aborted = true;
   });
 
   const sendEvent = (type: string, data: SSEEventData): void => {
@@ -341,7 +368,15 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
     let candidates: Candidate[];
     try {
       candidates = await routerAgent.getCandidateAgents(intent.requiredQualification);
-    } catch {
+    } catch (candErr) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-server',
+          event: 'get_candidates_failed',
+          detail: candErr instanceof Error ? candErr.message : String(candErr),
+        }),
+      );
       candidates = [];
     }
     sendEvent('candidates', {
@@ -483,19 +518,19 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
     sendEvent('phase', { phase: 'logging', message: '记录审计日志到区块链...', icon: '⛓️' });
     try {
       // P1-C2：传 Decision 明文字段（taskHash/rankedAgents/timestamp），合约链上重建 EIP-712 摘要
-      const tx1 = await auditLogContract.logScheduleWithDecision(
-        routerWalletAddress,
-        selected.address,
-        finalCommitment,
-        0,
-        routerWalletAddress,
+      // 适配器按 AUDIT_MODE 走 full（logScheduleWithDecision）或 optimized（M5 logScheduleEncoded）
+      const logRes = await auditAdapter.logSchedule({
+        requester: routerWalletAddress,
+        targetAgent: selected.address,
+        taskCommitment: finalCommitment,
+        reason: 0,
+        routerSigner: routerWalletAddress,
         taskHash,
-        rankedAgentsHash,
-        timestamp,
+        rankedAgents: rankedAgentsHash,
+        decisionTimestamp: timestamp,
         decisionSig,
-      );
-      const r1 = await tx1.wait();
-      recordId = Number(r1!.logs[0].topics[1]);
+      });
+      recordId = logRes.recordId;
 
       const resultHash = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
       const resultDigest = ethers.keccak256(
@@ -512,20 +547,21 @@ app.post('/api/dispatch/stream', async (req: Request, res: Response) => {
         timestamp,
       });
       // P1-C2：传 resultTimestamp，合约链上重建 Result 摘要
-      const tx2 = await auditLogContract.updateExecutionWithSig(
+      const upd = await auditAdapter.updateExecution({
         recordId,
-        1,
-        executionResult.result,
+        status: 1,
+        result: executionResult.result,
         resultDigest,
-        timestamp,
+        resultTimestamp: timestamp,
         workerSig,
-      );
-      await tx2.wait();
+      });
 
       sendEvent('logged', {
-        message: '审计日志已记录到区块链（含 Router + Worker 签名）',
+        message: `审计日志已记录到区块链（${auditAdapter.mode} 模式，含 Router + Worker 签名）`,
         recordId,
-        txHash: r1!.hash,
+        txHash: logRes.txHash,
+        auditMode: auditAdapter.mode,
+        executionTxHash: upd.txHash,
       });
     } catch (logErr) {
       sendEvent('logged', {
@@ -643,20 +679,19 @@ app.post('/api/dispatch', async (req: Request, res: Response) => {
       ROUTER_DECISION_TYPES,
       decisionValue,
     );
-    // P1-C2：传 Decision 明文字段，合约链上重建 EIP-712 摘要
-    const tx1 = await auditLogContract.logScheduleWithDecision(
-      routerWalletAddress,
-      routingResult.agent.address,
-      commitment,
-      0,
-      routerWalletAddress,
+    // P1-C2：传 Decision 明文字段，合约链上重建 EIP-712 摘要（适配器按 AUDIT_MODE 选实现）
+    const logRes = await auditAdapter.logSchedule({
+      requester: routerWalletAddress,
+      targetAgent: routingResult.agent.address,
+      taskCommitment: commitment,
+      reason: 0,
+      routerSigner: routerWalletAddress,
       taskHash,
-      rankedAgentsHash,
-      timestamp,
+      rankedAgents: rankedAgentsHash,
+      decisionTimestamp: timestamp,
       decisionSig,
-    );
-    const r1 = await tx1.wait();
-    const recordId = Number(r1!.logs[0].topics[1]);
+    });
+    const recordId = logRes.recordId;
     const resultHash = ethers.keccak256(ethers.toUtf8Bytes(executionResult.result));
     const resultDigest = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
@@ -671,15 +706,14 @@ app.post('/api/dispatch', async (req: Request, res: Response) => {
       resultDigest,
       timestamp,
     });
-    const tx2 = await auditLogContract.updateExecutionWithSig(
+    await auditAdapter.updateExecution({
       recordId,
-      1,
-      executionResult.result,
+      status: 1,
+      result: executionResult.result,
       resultDigest,
-      timestamp,
+      resultTimestamp: timestamp,
       workerSig,
-    );
-    await tx2.wait();
+    });
 
     res.json({
       success: true,

@@ -22,9 +22,13 @@ process.env.REPUTATION_SIGNER_PRIVATE_KEY =
   '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a';
 // P2：worker 改用助记词派生（demo 模式），不再用单一 WORKER_DEMO_PRIVATE_KEY 代签
 process.env.WORKER_SIGNING_MODE = 'demo';
+// 显式设标准 Hardhat 助记词，避免继承 shell 中可能存在的无效 BIP-39 短语
+process.env.WORKER_DEMO_MNEMONIC = 'test test test test test test test test test test test junk';
 process.env.AGENT_DID_ADDRESS = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
 process.env.AUDIT_LOG_ADDRESS = '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0';
 process.env.REPUTATION_ADDRESS = '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9';
+// 审计模式默认 full（原版 AuditLog）；optimized 模式由独立适配器测试覆盖
+process.env.AUDIT_MODE = 'full';
 process.env.API_PORT = '0';
 process.env.API_ACCESS_KEYS = '';
 process.env.RATE_LIMIT_WINDOW_MS = '60000';

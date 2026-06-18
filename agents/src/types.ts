@@ -45,7 +45,19 @@ export interface AppConfig {
     AgentDID: string;
     AuditLog: string;
     Reputation: string;
+    /** 成本优化版审计合约（event-only / M5 编码归属）；仅 AUDIT_MODE='optimized' 时需要 */
+    AuditLogOptimized?: string;
   };
+  /**
+   * 审计写入模式（成本--可验证性帕累托前沿的部署选点）：
+   *  - 'full'：原版 AuditLog，13 字段全 SSTORE 上链。链上可 eth_getProof 无信任存在性证明、
+   *    支持 dispute/slash 管线与 getRecord 回读。~407k gas/dispatch。默认。
+   *  - 'optimized'：AuditLogOptimized 的 M5 编码路径，审计数据走 event（receipts trie 同等防篡改），
+   *    targetAgent 编进 recordId 高 160 位零存储归属。~85k gas/dispatch（省 ~79%）。
+   *    代价：记录可发现性移到链下 indexer（EIP-7745/7792 前按 topic 跨块检索需信任 RPC），
+   *    且无 getRecord 回读 —— /api/reputation/summary 的链上记录统计降级。
+   */
+  AUDIT_MODE: 'full' | 'optimized';
   ROUTER_SIGNER_PK: string;
   REPUTATION_SIGNER_PK: string;
   /** @deprecated P2：单一 worker 代签密钥已被 worker-signing provider 取代；保留仅为向后兼容 env */

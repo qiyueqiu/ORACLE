@@ -61,8 +61,15 @@ async function main() {
   const signers = await ethers.getSigners();
   console.log(`可用账户数: ${signers.length}\n`);
 
-  const agentDID = await ethers.getContractAt('AgentDID', '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512', signers[0]);
-  const reputation = await ethers.getContractAt('Reputation', '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9', signers[0]);
+  // 从部署文件读地址（消除硬编码；加 AuditLogOptimized 后地址顺序已变）
+  const depFs = require('fs');
+  const depPath = require('path');
+  const dep = JSON.parse(
+    depFs.readFileSync(depPath.join(__dirname, '..', 'deployments', 'localhost.json'), 'utf8'),
+  ).addresses;
+
+  const agentDID = await ethers.getContractAt('AgentDID', dep.AgentDID, signers[0]);
+  const reputation = await ethers.getContractAt('Reputation', dep.Reputation, signers[0]);
 
   const results = [];
 

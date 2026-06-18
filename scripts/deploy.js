@@ -40,6 +40,15 @@ async function main() {
     const auditLogAddress = await auditLog.getAddress();
     console.log(`3. AuditLog: ${auditLogAddress}`);
 
+    // 3b. AuditLogOptimized（成本优化版：event-only + M5 编码归属，~85k gas/dispatch，省 ~79%）
+    //     api-server 设 AUDIT_MODE=optimized 时写入此合约。代表成本--可验证性帕累托前沿
+    //     上「低成本审计」一端，供部署者按需选点。
+    const AuditLogOptimized = await hre.ethers.getContractFactory("AuditLogOptimized");
+    const auditLogOptimized = await AuditLogOptimized.deploy();
+    await auditLogOptimized.waitForDeployment();
+    const auditLogOptimizedAddress = await auditLogOptimized.getAddress();
+    console.log(`3b. AuditLogOptimized: ${auditLogOptimizedAddress}`);
+
     // 4. Reputation
     const Reputation = await hre.ethers.getContractFactory("Reputation");
     const reputation = await Reputation.deploy();
@@ -73,6 +82,11 @@ async function main() {
     await tx.wait();
     console.log("   AuditLog.setAgentDID ✓");
 
+    // 7b. 关联：AuditLogOptimized <-> AgentDID（M5 执行阶段验 worker pubKey 需要）
+    tx = await auditLogOptimized.setAgentDID(agentDIDAddress);
+    await tx.wait();
+    console.log("   AuditLogOptimized.setAgentDID ✓");
+
     // 8. 关联：AgentStake & PaymentEscrow <-> AuditLog
     if (stakeAddress !== hre.ethers.ZeroAddress) {
         const AgentStake = await hre.ethers.getContractFactory("AgentStake");
@@ -94,6 +108,7 @@ async function main() {
     const addresses = {
         AgentDID: agentDIDAddress,
         AuditLog: auditLogAddress,
+        AuditLogOptimized: auditLogOptimizedAddress,
         Reputation: reputationAddress,
         AgentStake: stakeAddress,
         PaymentEscrow: escrowAddress,

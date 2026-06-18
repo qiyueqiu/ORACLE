@@ -296,16 +296,23 @@ ${chainOfThought || '无'}
       const agent = await this.contracts.agentDID.agents(addr);
       const rep = await this.contracts.reputation.getReputation(addr);
 
-      const recordIds = await this.contracts.auditLog.getRecordsByAgent(addr);
+      // 链上回读记录：full 模式有 getRecordsByAgent/getRecord；optimized（event-only）模式
+      // 这些 view 不存在，调用会 revert —— 优雅降级为「无链上记录回读」（可发现性靠链下 indexer，
+      // 见成本--可验证性帕累托前沿）。此时按任务记录数为 0 统计，successRate/trend 退化但不报错。
       const records: { id: number; timestamp: number; status: number; rating: number }[] = [];
-      for (const id of recordIds) {
-        const rec = await this.contracts.auditLog.getRecord(Number(id));
-        records.push({
-          id: Number(rec.id),
-          timestamp: Number(rec.timestamp),
-          status: Number(rec.executionStatus),
-          rating: Number(rec.reputationRating),
-        });
+      try {
+        const recordIds = await this.contracts.auditLog.getRecordsByAgent(addr);
+        for (const id of recordIds) {
+          const rec = await this.contracts.auditLog.getRecord(Number(id));
+          records.push({
+            id: Number(rec.id),
+            timestamp: Number(rec.timestamp),
+            status: Number(rec.executionStatus),
+            rating: Number(rec.reputationRating),
+          });
+        }
+      } catch {
+        // optimized 审计模式无链上回读接口；记录统计降级，信誉评分本身仍来自 Reputation 合约
       }
 
       const successRate =

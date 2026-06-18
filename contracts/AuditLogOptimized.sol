@@ -247,5 +247,86 @@ contract AuditLogOptimized is Ownable {
         }
         emit ExecutionUpdated(recordId, status, resultDigest, recovered, block.timestamp);
     }
+
+    // ===== M6：极致压缩（calldata 最小化 + routerSigner 从签名反推）=====
+    // 在 M5（recordId 编码归属，零锚点）基础上进一步榨 calldata——L2 上 calldata 是 L1 DA
+    // 主导成本，压它同时降 L1+L2。三个手段：
+    //   (1) routerSigner 不传参，直接用 ecrecover 结果 emit（省 1 个 address calldata + 去 require）；
+    //       安全不降：原版是「recover==传入 routerSigner」，这里是「emit recover 结果」，
+    //       任何篡改签名都改变 recover 结果，等价绑定，且 indexer 看到的 routerSigner 即真实签名者。
+    //   (2) reason 用 uint8、decisionTimestamp 用 uint48（够到公元 8.9 百万年），紧凑打包。
+    //   (3) requester/taskCommitment 仍 emit（审计必需），但小字段不再各占 32B 对齐槽。
+    // 验签字段绑定不变：digest 仍含 taskHash+rankedAgents+targetAgent+timestamp（防重放）。
+    event ScheduleLoggedCompact(
+        uint256 indexed recordId,
+        address indexed requester,
+        address indexed routerSigner,  // = ecrecover 结果，真实签名者
+        uint8 reason,
+        bytes32 taskCommitment,
+        bytes32 decisionDigest,
+        uint48 timestamp
+    );
+
+    function logScheduleCompact(
+        address requester,
+        address targetAgent,
+        bytes32 taskCommitment,
+        uint8 reason,
+        bytes32 taskHash,
+        bytes32 rankedAgents,
+        uint48 decisionTimestamp,
+        bytes calldata decisionSig
+    ) external returns (uint256 recordId) {
+        require(decisionSig.length == 65, "Invalid sig length");
+        // 【类型契约】接口收 uint48 以省 calldata，但 DECISION_TYPEHASH 仍是 `uint256 timestamp`。
+        // 链下签名必须按 EIP-712 的 uint256 编码 timestamp（值 == 此 uint48 零扩展）。
+        // Solidity 0.8 ABI 解码器对 uint48 高位非零的 calldata 会自动 revert（非静默截断），
+        // 故超 uint48 范围（>公元 10889 年）的输入会被解码层拒绝，不会产生摘要不匹配的静默失败。
+        // _hashDecision 形参为 uint256，此处 uint48 零扩展回 uint256，与链下 uint256 签名一致。
+        bytes32 digest = _hashDecision(taskHash, rankedAgents, targetAgent, decisionTimestamp);
+        address routerSigner = digest.recover(decisionSig);  // 反推签名者，省 1 个 calldata 参数
+        require(routerSigner != address(0), "Bad router sig");
+        uint96 seq = ++seqCounter;
+        recordId = encodeRecordId(targetAgent, seq);
+        emit ScheduleLoggedCompact(recordId, requester, routerSigner, reason, taskCommitment, digest, decisionTimestamp);
+    }
+
+    // ===== M7：批量 + 编码 + 压缩三合一（帕累托前沿极限点）=====
+    // 集齐全部正交优化:批量摊薄 tx base（M4）+ recordId 编码归属零锚点（M5）+
+    // calldata 压缩 routerSigner 反推（M6）。每条仍独立 ecrecover（安全不降）。
+    // per-record gas 趋近物理下限 ≈ ecrecover(3k) + event(~5k) + 摊薄后 calldata/keccak。
+    struct CompactItem {
+        address requester;
+        address targetAgent;
+        bytes32 taskCommitment;
+        uint8 reason;
+        bytes32 taskHash;
+        bytes32 rankedAgents;
+        uint48 decisionTimestamp;
+        bytes decisionSig;
+    }
+
+    function batchLogScheduleCompact(CompactItem[] calldata items)
+        external
+        returns (uint256 firstSeq, uint256 count)
+    {
+        count = items.length;
+        require(count > 0, "Empty batch");
+        uint96 seq = seqCounter;     // 读一次到内存
+        firstSeq = seq + 1;
+        for (uint256 i = 0; i < count; i++) {
+            CompactItem calldata it = items[i];
+            require(it.decisionSig.length == 65, "Invalid sig length");
+            // 逐条链上重建 EIP-712 摘要 + ecrecover（安全与单条等价）
+            bytes32 digest = _hashDecision(it.taskHash, it.rankedAgents, it.targetAgent, it.decisionTimestamp);
+            address routerSigner = digest.recover(it.decisionSig);
+            require(routerSigner != address(0), "Bad router sig");
+            seq++;
+            uint256 recordId = encodeRecordId(it.targetAgent, seq);  // 编码归属，零锚点
+            emit ScheduleLoggedCompact(recordId, it.requester, routerSigner, it.reason, it.taskCommitment, digest, it.decisionTimestamp);
+        }
+        seqCounter = seq;   // 批内只 1 次 SSTORE 写回（而非 N 次）
+        emit BatchScheduleLogged(firstSeq, count, msg.sender);
+    }
 }
 

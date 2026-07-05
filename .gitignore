@@ -32,13 +32,10 @@ deployments/
 # Test agent fixtures（setup-test-agents.js 输出，每次重跑会变）
 test/test-agents.json
 
-# Paper 论文构建产物
-paper/*.aux
-paper/*.log
-paper/*.out
-paper/*.toc
-paper/*.synctex.gz
-paper/build/
+# Papers — kept in a separate private repo, never published here.
+paper/
+paper2/
+paper2-en/
 
 # 临时探索文件（CTAN/文档 HTML 下载）
 *.html

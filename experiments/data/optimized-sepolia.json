@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-06-17T19:04:17.769Z",
+  "network": "sepolia",
+  "chainId": 11155111,
+  "samples": 5,
+  "optimizedContract": "0x6B9B6C2b1A6EA7AE619882109e640d0a530527ce",
+  "perOperation_gas": {
+    "M1_log": 62305,
+    "M1_update": 44187,
+    "M5_log": 43763,
+    "M5_update": 42234
+  },
+  "dispatch": {
+    "原版(E1实测基线)": {
+      "gas": 405126,
+      "usd20gwei": 24.3076
+    },
+    "M1+M3 event-only": {
+      "gas": 106492,
+      "usd20gwei": 6.3895,
+      "vsBaselinePct": 73.7
+    },
+    "M5 编码(零锚点)": {
+      "gas": 85997,
+      "usd20gwei": 5.1598,
+      "vsBaselinePct": 78.8
+    }
+  },
+  "note": "Sepolia 真实测试网实测优化合约 gas,坐实本地确定性测量。原版基线取 E1 实测 405,126。"
+}

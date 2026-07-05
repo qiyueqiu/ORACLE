@@ -109,6 +109,18 @@ describe("Slash Pipeline (P6 dispute-gated)", function () {
       const recordId = await logSchedule();
       await expect(auditLog.updateExecution(recordId, 4, "x")).to.be.revertedWith("Use raiseDispute");
     });
+
+    it("SUCCESS is terminal: cannot be downgraded to FAILED (blocks SUCCESS→FAILED→dispute→slash)", async function () {
+      const recordId = await logSchedule();
+      await auditLog.updateExecution(recordId, 1, "ok"); // 1 = SUCCESS
+      // anyone trying to downgrade SUCCESS→FAILED is rejected, closing the two-step slash path
+      await expect(
+        auditLog.connect(other).updateExecution(recordId, 2, "forced-fail"),
+      ).to.be.revertedWith("SUCCESS is terminal");
+      // record stays SUCCESS, so raiseDispute remains unavailable
+      const rec = await auditLog.getRecord(recordId);
+      expect(rec.executionStatus).to.equal(1);
+    });
   });
 
   describe("dispute flow + circuit breaker", function () {

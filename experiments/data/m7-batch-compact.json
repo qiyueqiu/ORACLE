@@ -1,0 +1,83 @@
+{
+  "timestamp": "2026-06-18T04:09:59.960Z",
+  "network": "hardhat",
+  "gweiAssumed": 20,
+  "ethUsdAssumed": 3000,
+  "M4_byBatchSize": [
+    {
+      "size": 1,
+      "totalGas": 65984,
+      "perRecordGas": 65984,
+      "perRecordUSD": 3.959
+    },
+    {
+      "size": 5,
+      "totalGas": 215019,
+      "perRecordGas": 43004,
+      "perRecordUSD": 2.5802
+    },
+    {
+      "size": 10,
+      "totalGas": 401303,
+      "perRecordGas": 40130,
+      "perRecordUSD": 2.4078
+    },
+    {
+      "size": 50,
+      "totalGas": 1893731,
+      "perRecordGas": 37875,
+      "perRecordUSD": 2.2725
+    },
+    {
+      "size": 100,
+      "totalGas": 3764265,
+      "perRecordGas": 37643,
+      "perRecordUSD": 2.2586
+    }
+  ],
+  "M7_byBatchSize": [
+    {
+      "size": 1,
+      "totalGas": 60001,
+      "perRecordGas": 60001,
+      "perRecordUSD": 3.6001
+    },
+    {
+      "size": 5,
+      "totalGas": 98655,
+      "perRecordGas": 19731,
+      "perRecordUSD": 1.1839
+    },
+    {
+      "size": 10,
+      "totalGas": 168459,
+      "perRecordGas": 16846,
+      "perRecordUSD": 1.0108
+    },
+    {
+      "size": 50,
+      "totalGas": 728540,
+      "perRecordGas": 14571,
+      "perRecordUSD": 0.8742
+    },
+    {
+      "size": 100,
+      "totalGas": 1433261,
+      "perRecordGas": 14333,
+      "perRecordUSD": 0.86
+    }
+  ],
+  "summary": {
+    "m4_perRecord_batch100": 37643,
+    "m7_perRecord_batch100": 14333,
+    "m7_vs_m4_reductionPct": 61.9,
+    "m7_perRecord_batch10": 16846,
+    "m7_floor_note": "M7 per-record 趋近 ecrecover(3k)+event(~5k)+摊薄 calldata/keccak"
+  },
+  "adversarialTest": {
+    "batchAttributionIntact": true,
+    "decoded": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "expected": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+  },
+  "note": "M7=批量(摊tx base)+recordId编码(零锚点)+calldata压缩(routerSigner反推+uint8/uint48)。每条独立 ecrecover 安全不降。"
+}

@@ -5,7 +5,7 @@
  * 测量 vs M1（20k 锚点）的 gas 降幅，并用对抗测试证明归属安全不降。
  *
  * 运行：npx hardhat run experiments/m5-encoded-recordid.js
- * 输出：paper2/data/m5-encoded.json
+ * 输出：experiments/data/m5-encoded.json
  */
 const hre = require("hardhat");
 const fs = require("fs");
@@ -110,7 +110,7 @@ async function main() {
     note: "M5 方案 B（recordId 编码 targetAgent）经对抗审查（方案 C/D 已证不安全被排除）。代价:recordId 失全局时间序。",
   };
 
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "m5-encoded.json"), JSON.stringify(report, null, 2));
 
@@ -126,7 +126,7 @@ async function main() {
   console.log(`  recordId 解码 targetAgent 正确 → ${attacks.recordId_decodes_to_correct_agent.match ? "✅" : "❌"}`);
   console.log(`  WorkerB 改 recordId 只得自己任务 → ${attacks.workerB_changes_recordId_only_gets_own.isWorkerB ? "✅ (非冒充)" : "❌"}`);
   console.log(`\n  ${report.securityConclusion}`);
-  console.log(`\n📊 → paper2/data/m5-encoded.json`);
+  console.log(`\n📊 → experiments/data/m5-encoded.json`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });

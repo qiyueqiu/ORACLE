@@ -6,7 +6,7 @@
  * 每条仍带独立 EIP-712 签名 + 逐条 ecrecover（安全不降）。
  *
  * 运行：npx hardhat run experiments/batch-anchoring.js
- * 输出：paper2/data/batch-anchoring.json
+ * 输出：experiments/data/batch-anchoring.json
  */
 const hre = require("hardhat");
 const fs = require("fs");
@@ -75,14 +75,14 @@ async function main() {
     },
   };
 
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "batch-anchoring.json"), JSON.stringify(report, null, 2));
 
   console.log(`\n  单条 per-record: ${single.toLocaleString()} gas ($${report.summary.perRecordUSD_single}@${GWEI}gwei)`);
   console.log(`  batch=100 per-record: ${best.perRecordGas.toLocaleString()} gas ($${best.perRecordUSD}@${GWEI}gwei)`);
   console.log(`  摊薄降幅: ${report.summary.reductionPct}%`);
-  console.log(`\n📊 → paper2/data/batch-anchoring.json`);
+  console.log(`\n📊 → experiments/data/batch-anchoring.json`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });

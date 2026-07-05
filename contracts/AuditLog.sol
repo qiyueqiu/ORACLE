@@ -295,6 +295,10 @@ contract AuditLog is Ownable {
     ) external {
         require(records[recordId].exists, "Record not found");
         require(status != ExecutionStatus.DISPUTED, "Use raiseDispute");
+        // SUCCESS is terminal: once a record is SUCCESS it cannot be downgraded
+        // (e.g. to FAILED), which would otherwise open a
+        // SUCCESS -> FAILED -> raiseDispute -> slash path (Prop. zero-slash).
+        require(records[recordId].executionStatus != ExecutionStatus.SUCCESS, "SUCCESS is terminal");
         records[recordId].executionStatus = status;
         records[recordId].executionResult = result;
         emit ExecutionUpdated(recordId, status, result, address(0));
@@ -314,6 +318,8 @@ contract AuditLog is Ownable {
     ) external {
         require(records[recordId].exists, "Record not found");
         require(status != ExecutionStatus.DISPUTED, "Use raiseDispute");
+        // SUCCESS is terminal (see updateExecution): no downgrade out of SUCCESS.
+        require(records[recordId].executionStatus != ExecutionStatus.SUCCESS, "SUCCESS is terminal");
         require(workerSig.length == 65, "Invalid sig length");
         bytes32 digest = _hashResult(recordId, resultDigest, resultTimestamp);
         address recovered = digest.recover(workerSig);

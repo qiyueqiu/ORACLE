@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-06-17T18:53:36.625Z",
+  "network": "hardhat",
+  "gweiAssumed": 20,
+  "ethUsdAssumed": 3000,
+  "perOperation_gas": {
+    "M1_log": 62295,
+    "M5_log": 42046,
+    "M3_update": 44188,
+    "M5_update": 42217
+  },
+  "dispatch": {
+    "M1+M3 (20k 锚点)": {
+      "gas": 106483,
+      "usd20gwei": 6.389
+    },
+    "M5 (编码, 零锚点)": {
+      "gas": 84263,
+      "usd20gwei": 5.0558
+    }
+  },
+  "m5_vs_m1_reductionPct": 20.9,
+  "adversarialTests": {
+    "workerB_forges_workerA_record": {
+      "rejected": true,
+      "reason": "Sig not from worker pubKey"
+    },
+    "recordId_decodes_to_correct_agent": {
+      "decoded": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "expected": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "match": true
+    },
+    "workerB_changes_recordId_only_gets_own": {
+      "decoded": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "isWorkerB": true,
+      "note": "WorkerB 改 recordId 编码自己地址 → 指向 WorkerB 自己的任务,非 recordA,不构成冒充"
+    }
+  },
+  "securityConclusion": "✅ M5 归属安全等同 M1:WorkerB 无法冒充,recordId 不可篡改归属",
+  "note": "M5 方案 B（recordId 编码 targetAgent）经对抗审查（方案 C/D 已证不安全被排除）。代价:recordId 失全局时间序。"
+}

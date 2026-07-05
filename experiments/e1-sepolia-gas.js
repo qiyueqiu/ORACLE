@@ -12,7 +12,7 @@
  * 采集每笔 gasUsed + effectiveGasPrice + 钱包真实花费，算 USD 成本（多 gas price 区间）。
  *
  * 运行：BENCH_N=100 node experiments/e1-sepolia-gas.js
- * 输出：paper2/data/e1-sepolia-gas.json
+ * 输出：experiments/data/e1-sepolia-gas.json
  */
 const fs = require("fs");
 const path = require("path");
@@ -106,7 +106,7 @@ async function main() {
   const resultTypes = { Result: [{ name: "recordId", type: "uint256" }, { name: "resultDigest", type: "bytes32" }, { name: "timestamp", type: "uint256" }] };
 
   const stats = { logSchedule: { gas: [] }, updateExecution: { gas: [] }, total: { gas: [], latency: [], gasPriceGwei: [], costEth: [] } };
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   const partialPath = path.join(outDir, "e1-sepolia-gas.partial.json");
 

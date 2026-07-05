@@ -6,7 +6,7 @@
  * 实测 M1(event-only+锚点) / M5(编码,零锚点) / batch 的真实 gas，对比 E1 原版基线(405k)。
  *
  * 运行：node experiments/optimized-sepolia.js
- * 输出：paper2/data/optimized-sepolia.json
+ * 输出：experiments/data/optimized-sepolia.json
  */
 const fs = require("fs");
 const path = require("path");
@@ -124,7 +124,7 @@ async function main() {
     note: "Sepolia 真实测试网实测优化合约 gas,坐实本地确定性测量。原版基线取 E1 实测 405,126。",
   };
 
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "optimized-sepolia.json"), JSON.stringify(report, null, 2));
 
@@ -132,7 +132,7 @@ async function main() {
   console.log(`  原版基线(E1):      ${baseline.toLocaleString()} gas  $${usd(baseline)}@20gwei`);
   console.log(`  M1+M3 event-only:  ${dM1.toLocaleString()} gas  $${usd(dM1)}  (省 ${report.dispatch["M1+M3 event-only"].vsBaselinePct}%)`);
   console.log(`  M5 编码(零锚点):   ${dM5.toLocaleString()} gas  $${usd(dM5)}  (省 ${report.dispatch["M5 编码(零锚点)"].vsBaselinePct}%)`);
-  console.log(`\n📊 → paper2/data/optimized-sepolia.json`);
+  console.log(`\n📊 → experiments/data/optimized-sepolia.json`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error("❌", e); process.exit(1); });

@@ -7,7 +7,7 @@
  *     测 rounds-to-pass isReliableWeighted + 对路由的污染(诚实局限实证)。
  *
  * 确定性(种子化 LCG,不依赖真实 LLM,保证可复现)。
- * 输出 paper2/data/e4-results.json。
+ * 输出 experiments/data/e4-results.json。
  * 运行:npx hardhat run experiments/e4-routing-sybil.js
  */
 const hre = require("hardhat");
@@ -148,7 +148,7 @@ async function main() {
   };
 
   const results = { generatedNote: "P4 E4 local; deterministic seed=42/7/99", routingAccuracy, collusion };
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "e4-results.json"), JSON.stringify(results, null, 2));
   console.log("E4 done →", path.join(outDir, "e4-results.json"));

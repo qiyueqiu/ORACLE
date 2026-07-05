@@ -1,0 +1,54 @@
+{
+ "frontier_at_20gwei_eth3000": [
+  {
+   "config": "原版 (13字段全 SSTORE)",
+   "gas": 410431,
+   "savePct": 0.0,
+   "usd": 24.63
+  },
+  {
+   "config": "M2 折中 (承诺槽+防重用+锚点)",
+   "gas": 151480,
+   "savePct": 63.1,
+   "usd": 9.09
+  },
+  {
+   "config": "M1 event-only (20k 锚点)",
+   "gas": 106402,
+   "savePct": 74.1,
+   "usd": 6.38
+  },
+  {
+   "config": "M5 recordId 编码 (零锚点)",
+   "gas": 84263,
+   "savePct": 79.5,
+   "usd": 5.06
+  },
+  {
+   "config": "M7 batch=10 (实用点)",
+   "perRecordGas": 16846,
+   "usd": 1.01
+  },
+  {
+   "config": "M7 batch=100 (极限)",
+   "perRecordGas": 14333,
+   "savePct": 96.5,
+   "usd": 0.86
+  }
+ ],
+ "span": {
+  "from_usd": 24.63,
+  "to_usd": 0.86,
+  "maxSavePct": 96.5
+ },
+ "physicalFloor": {
+  "gas": 14000,
+  "note": "ecrecover(3k)+event(~5k)+摊薄calldata/keccak(~6k);再降需换密码学体系(BLS/ZK聚合验签),属另一篇论文范畴"
+ },
+ "gasComponentBreakdown": {
+  "txBase": 21000,
+  "ecrecover": 3000,
+  "event7fields": 5406,
+  "note": "txBase 批量可摊薄至~0/record;ecrecover 单条不可压;event 审计核心"
+ }
+}

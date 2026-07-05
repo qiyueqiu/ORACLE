@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-07-05T07:14:42.861Z",
+  "network": "hardhat",
+  "samples": 10,
+  "perOperation_gas": {
+    "baseline_logSchedule": 295592,
+    "baseline_updateExecution": 114839,
+    "M1_logEventOnly": 62288,
+    "M2_logCommitment": 107344,
+    "M3_updateEventOnly": 44186
+  },
+  "perDispatch_gas": {
+    "原版（baseline）": 410431,
+    "M1+M3（全 event-only）": 106474,
+    "M2+M3（折中：log 存承诺 + update event-only）": 151530
+  },
+  "perDispatch_usd": {
+    "原版（baseline）": {
+      "gas": 410431,
+      "usd": {
+        "5gwei": 6.16,
+        "20gwei": 24.63,
+        "50gwei": 61.56,
+        "100gwei": 123.13
+      }
+    },
+    "M1+M3（全 event-only）": {
+      "gas": 106474,
+      "usd": {
+        "5gwei": 1.6,
+        "20gwei": 6.39,
+        "50gwei": 15.97,
+        "100gwei": 31.94
+      }
+    },
+    "M2+M3（折中：log 存承诺 + update event-only）": {
+      "gas": 151530,
+      "usd": {
+        "5gwei": 2.27,
+        "20gwei": 9.09,
+        "50gwei": 22.73,
+        "100gwei": 45.46
+      }
+    }
+  },
+  "savings": {
+    "原版（baseline）": {
+      "gas": 410431,
+      "vsBaseline_pct": 0
+    },
+    "M1+M3（全 event-only）": {
+      "gas": 106474,
+      "vsBaseline_pct": 74.1
+    },
+    "M2+M3（折中：log 存承诺 + update event-only）": {
+      "gas": 151530,
+      "vsBaseline_pct": 63.1
+    }
+  },
+  "propertyMatrix": {
+    "note": "各模式保留的安全/可验证性属性。关键 nuance（WebSearch 核实 EIP-7745/7792）：event logs 经 receipts trie 获协议级防篡改（根入区块头，与 storage 同等），但「按 topic 跨块 trustless 检索」当前依赖 bloom filter+需信任 RPC，非 trustless，直到 EIP-7745 落地。storage 方案可经 eth_getProof 对槽做 trustless 存在性证明。另：M3 event-only 只记录 resultDigest 摘要，不记录明文执行结果（原版 storage 存明文 executionResult 字符串）——明文需链下持有+revealTask 式揭示。",
+    "columns": [
+      "EIP-712链上验签",
+      "防跨链重放",
+      "worker归属(=本record的targetAgent)",
+      "协议级防篡改",
+      "防commitment重用",
+      "链上trustless存在性证明",
+      "已知tx的Merkle证明",
+      "链上记录明文结果"
+    ],
+    "rows": {
+      "原版(storage)": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "M1全event-only": [
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false
+      ],
+      "M2折中(承诺+锚点)": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "M3 update event-only": [
+        true,
+        true,
+        true,
+        true,
+        "n/a",
+        false,
+        true,
+        false
+      ]
+    }
+  },
+  "attributionAttackTest": {
+    "description": "WorkerB 用自身合法签名冒充 WorkerA 任务执行者",
+    "rejected": true,
+    "revertReason": "Sig not from worker pubKey"
+  },
+  "ethUsdAssumed": 3000
+}

@@ -5,7 +5,7 @@
  * 测 batch size {1,5,10,50,100}。含对抗测试:批量中每条归属仍由 recordId 编码锁定。
  *
  * 运行：npx hardhat run experiments/m7-batch-compact.js
- * 输出：paper2/data/m7-batch-compact.json
+ * 输出：experiments/data/m7-batch-compact.json
  */
 const hre = require("hardhat");
 const fs = require("fs");
@@ -84,7 +84,7 @@ async function main() {
     note: "M7=批量(摊tx base)+recordId编码(零锚点)+calldata压缩(routerSigner反推+uint8/uint48)。每条独立 ecrecover 安全不降。",
   };
 
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "m7-batch-compact.json"), JSON.stringify(report, null, 2));
 
@@ -94,7 +94,7 @@ async function main() {
   console.log(`  M7 vs M4 再降: ${report.summary.m7_vs_m4_reductionPct}%`);
   console.log(`  M7 batch=10 实用点: ${m7_10.toLocaleString()} gas/record  $${m7.find(x=>x.size===10).perRecordUSD}`);
   console.log(`  🛡️ 批量归属编码完整: ${attribOk ? "✅" : "❌"}`);
-  console.log(`\n📊 → paper2/data/m7-batch-compact.json`);
+  console.log(`\n📊 → experiments/data/m7-batch-compact.json`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });

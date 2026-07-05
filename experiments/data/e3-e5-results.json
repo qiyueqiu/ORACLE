@@ -1,0 +1,54 @@
+{
+  "generatedNote": "P4 E3+E5 local Hardhat; stamp time externally",
+  "e3": {
+    "legitWorkerUpdateGas": 114817,
+    "relayForgeRejected": true,
+    "relayForgeRevertReason": "Sig not from worker pubKey",
+    "crossChainReplayRejected": true,
+    "decisionCrossChainReplayRejected": true,
+    "propertyMatrix": {
+      "columns": [
+        "ORACLE",
+        "centralized_HMAC_log",
+        "Qi_et_al_plain_ECDSA",
+        "ERC8004_storage_only"
+      ],
+      "rows": {
+        "tamper_evidence_third_party": [
+          true,
+          false,
+          true,
+          true
+        ],
+        "relay_forgery_resistance": [
+          true,
+          false,
+          false,
+          false
+        ],
+        "cross_chain_replay_resistance": [
+          true,
+          "n/a",
+          false,
+          false
+        ],
+        "worker_forgery_resistance": [
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      "note": "worker_forgery_resistance=false for all: signature proves authorship not correctness (arXiv:2603.10060)"
+    }
+  },
+  "e5": {
+    "updateFailedGas": 72568,
+    "raiseDisputeGas": 54760,
+    "resolveDisputeSlashDisabledGas": 35275,
+    "resolveDisputeSlashEnabledGas": 95982,
+    "slashAmount": "100000000000000000000",
+    "slashBpsObserved": 1000,
+    "circuitBreakerOverheadGas": 60707
+  }
+}

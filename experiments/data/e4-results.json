@@ -1,0 +1,93 @@
+{
+  "generatedNote": "P4 E4 local; deterministic seed=42/7/99",
+  "routingAccuracy": {
+    "groundTruthBest": "A",
+    "nRounds": 200,
+    "design": "online learning from uniform prior (rep=50); noisy quality feedback; NOT initialized to ground-truth (fixes tautology)",
+    "learnedReputation": {
+      "A": 90,
+      "B": 70,
+      "C": 61,
+      "D": 45,
+      "E": 31
+    },
+    "reputationConvergedAtRound": 1,
+    "sqrtWeighted": 0.845,
+    "uniform": 0.255,
+    "random": 0.23,
+    "accuracyCurve": [
+      {
+        "round": 20,
+        "sqrtCumAcc": 0.65
+      },
+      {
+        "round": 40,
+        "sqrtCumAcc": 0.675
+      },
+      {
+        "round": 60,
+        "sqrtCumAcc": 0.7333333333333333
+      },
+      {
+        "round": 80,
+        "sqrtCumAcc": 0.775
+      },
+      {
+        "round": 100,
+        "sqrtCumAcc": 0.81
+      },
+      {
+        "round": 120,
+        "sqrtCumAcc": 0.825
+      },
+      {
+        "round": 140,
+        "sqrtCumAcc": 0.8357142857142857
+      },
+      {
+        "round": 160,
+        "sqrtCumAcc": 0.8375
+      },
+      {
+        "round": 180,
+        "sqrtCumAcc": 0.8444444444444444
+      },
+      {
+        "round": 200,
+        "sqrtCumAcc": 0.845
+      }
+    ],
+    "note": "sqrt-weighted online routing converges reputation to true-quality order and outperforms uniform/random; accuracy is LEARNED not assumed"
+  },
+  "collusion": {
+    "ringSize": 5,
+    "initialRep": 30,
+    "roundsToPassReliable": 1,
+    "ringMemberFinalAvg": 99,
+    "legitAgentAvg": 80,
+    "ringAvgByRound": [
+      98,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99,
+      99
+    ],
+    "ringBeatsLegit": true,
+    "note": "established-reputation collusion: ring inflates via mutual sqrt-weighted ratings; honest limitation (Ozel arXiv:2605.18990)"
+  }
+}

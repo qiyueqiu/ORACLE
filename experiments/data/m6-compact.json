@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-06-17T19:15:36.206Z",
+  "network": "hardhat",
+  "gweiAssumed": 20,
+  "ethUsdAssumed": 3000,
+  "M5_log_gas": 42052,
+  "M6_log_gas": 39432,
+  "m6_vs_m5_log_reductionPct": 6.2,
+  "savedGasPerLog": 2620,
+  "adversarialTests": {
+    "compact_emits_real_signer": {
+      "routerSigner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "expected": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "match": true
+    },
+    "cross_chain_sig_recovers_different": {
+      "recovered": "0x513f06177c80c3aC08450d6b791d30926c3eC52d",
+      "isRouter": false,
+      "note": "跨链签名 recover 出非 router 地址 → 下游 RouterRegistry 白名单拒绝;digest 绑定本链 chainId"
+    },
+    "recordId_attribution_intact": {
+      "decoded": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "expected": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "match": true
+    }
+  },
+  "securityConclusion": "✅ M6 安全等同 M5:emit 真实签名者、归属编码不变、跨链签名 recover 出非 router(防重放成立)",
+  "note": "M6 routerSigner 从 ecrecover 反推(省 1 address calldata)+ reason uint8 + ts uint48。验签字段绑定不变。"
+}

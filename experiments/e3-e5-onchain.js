@@ -5,7 +5,7 @@
  * E5 — dispute-slash-信誉环：测量 FAILED→raiseDispute→resolveDispute→slash→penalty
  *      全环 gas 与断路器开销。
  *
- * 输出 paper2/data/e3-e5-results.json（供 paper2 表格与 matplotlib 图）。
+ * 输出 experiments/data/e3-e5-results.json。
  * 运行：npx hardhat run experiments/e3-e5-onchain.js
  */
 const hre = require("hardhat");
@@ -154,7 +154,7 @@ async function main() {
   results.e5.circuitBreakerOverheadGas = results.e5.resolveDisputeSlashEnabledGas - results.e5.resolveDisputeSlashDisabledGas;
 
   // 输出
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "e3-e5-results.json"), JSON.stringify(results, null, 2));
   console.log("E3+E5 done →", path.join(outDir, "e3-e5-results.json"));

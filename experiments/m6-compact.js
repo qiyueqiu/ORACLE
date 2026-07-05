@@ -5,7 +5,7 @@
  * reason uint8 + timestamp uint48 紧凑。测量 vs M5 的再降幅，对抗测试验证安全不降。
  *
  * 运行：npx hardhat run experiments/m6-compact.js
- * 输出：paper2/data/m6-compact.json
+ * 输出：experiments/data/m6-compact.json
  */
 const hre = require("hardhat");
 const fs = require("fs");
@@ -84,7 +84,7 @@ async function main() {
     note: "M6 routerSigner 从 ecrecover 反推(省 1 address calldata)+ reason uint8 + ts uint48。验签字段绑定不变。",
   };
 
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "m6-compact.json"), JSON.stringify(report, null, 2));
 
@@ -96,7 +96,7 @@ async function main() {
   console.log(`  跨链签名 recover 出非 router → ${!attacks.cross_chain_sig_recovers_different.isRouter ? "✅ (防重放成立)" : "❌"}`);
   console.log(`  recordId 归属编码不变 → ${attacks.recordId_attribution_intact.match ? "✅" : "❌"}`);
   console.log(`  ${report.securityConclusion}`);
-  console.log(`\n📊 → paper2/data/m6-compact.json`);
+  console.log(`\n📊 → experiments/data/m6-compact.json`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });

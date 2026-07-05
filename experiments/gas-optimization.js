@@ -12,7 +12,7 @@
  *   M3_updateEventOnly         执行结果 event-only
  *
  * 运行：npx hardhat run experiments/gas-optimization.js
- * 输出：paper2/data/gas-optimization.json
+ * 输出：experiments/data/gas-optimization.json
  */
 const hre = require("hardhat");
 const fs = require("fs");
@@ -157,7 +157,7 @@ async function main() {
     ethUsdAssumed: ETH_USD,
   };
 
-  const outDir = path.join(__dirname, "..", "paper2", "data");
+  const outDir = path.join(__dirname, "data");
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, "gas-optimization.json"), JSON.stringify(report, null, 2));
 
@@ -174,7 +174,7 @@ async function main() {
   for (const [name, row] of Object.entries(usdRows)) {
     console.log("  " + name.padEnd(40) + GWEI_POINTS.map(g => `$${row.usd[g + "gwei"]}`.padStart(10)).join(""));
   }
-  console.log(`\n📊 → paper2/data/gas-optimization.json`);
+  console.log(`\n📊 → experiments/data/gas-optimization.json`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });

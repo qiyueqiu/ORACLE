@@ -52,7 +52,7 @@ jobs:
           fi
 
   backend:
-    name: Backend (TypeScript: typecheck + lint + tests)
+    name: "Backend (TypeScript: typecheck + lint + tests)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

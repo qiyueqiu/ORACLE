@@ -7,6 +7,14 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js&logoColor=white)
 
+**ORACLE** binds an LLM-driven agent dispatch to an on-chain trust and audit layer. When a router agent at one organization selects a worker agent at another over a shared relay, ORACLE makes the dispatch itself non-repudiable: the router's decision and the worker's result are co-signed into a single dual-role **EIP-712** audit record, reconstructed and verified on-chain. The relay that submits these transactions holds **no signing key**, so it can pay gas but cannot forge or replay an attribution. A dispute over a failed task drives a stake-slashing loop into reputation, guarded by a circuit breaker that provably never slashes a successful execution.
+
+Three Solidity contracts provide the substrate — `AgentDID` (identity via hash commit–reveal, **not** a zero-knowledge proof), `AuditLog` (dual-EIP-712 dispatch records), and `Reputation` (reputation-weighted scoring with time decay). A TypeScript backend hosts the Router/Worker agents (SiliconFlow LLMs), and a React frontend drives the flow. Reputation weighting raises the cost of naive Sybil attacks but is **not** collusion-resistant; correctness of LLM output is out of scope (a signature attests authorship, not correctness).
+
+> A companion research paper is not yet public; the repository open-sources the system implementation only. See the Chinese sections below for full details.
+
+---
+
 ORACLE 是一个将 **LLM 驱动的 Agent 调度** 与 **链上信任、审计机制** 相结合的系统，聚焦可信路由与审计追溯。Router Agent 通过链上身份、信誉数据驱动调度决策，Worker Agent 执行任务，全过程不可篡改地记录上链。
 
 > 命名：**ORACLE** = **O**n-chain **R**eputation & **A**udit for **C**oordinated **L**LM-Agent **E**xecution。同时呼应区块链领域中"预言机（oracle）"作为链上链下桥梁的语义——正对应本系统中 LLM-Agent 与链上信任层之间的桥接定位。

@@ -144,7 +144,7 @@ async function main() {
     ringAvgByRound,
     // 路由污染:串谋环成员 avg 是否超过诚实 agent → 错误路由
     ringBeatsLegit: Number(ringRep.averageRating) >= Number(legitRep.averageRating),
-    note: "established-reputation collusion: ring inflates via mutual sqrt-weighted ratings; honest limitation (Ozel arXiv:2605.18990)",
+    note: "established-reputation collusion: ring inflates via mutual sqrt-weighted ratings; honest limitation (Bennett et al. arXiv:2605.18990)",
   };
 
   const results = { generatedNote: "P4 E4 local; deterministic seed=42/7/99", routingAccuracy, collusion };

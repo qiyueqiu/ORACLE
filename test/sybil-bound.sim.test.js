@@ -61,7 +61,7 @@ describe("Sybil Bound — formal cross-validation (P3)", function () {
     expect(Number(rep.averageRating)).to.be.gte(T); // 第 6 票后 ≥60，与闭式一致
   });
 
-  it("account-splitting strictly increases total weight (counterexample 5, Ozel neutrality)", async function () {
+  it("account-splitting strictly increases total weight (counterexample 5, Bennett concave-rule neutrality)", async function () {
     // 链上验证 floor(sqrt) 的拆分有利性：1×rep100(w=10) vs 4×rep25(w=5,总20)
     // 用 rateWeighted 的权重逻辑（合约 _sqrt）。直接断言 _sqrt 行为：
     // 通过 addRating 建立不同 rep 的评分者，观察其 rateWeighted 的有效权重。

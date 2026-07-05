@@ -1,5 +1,6 @@
 # ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution
 
+[![CI](https://github.com/qiyueqiu/ORACLE/actions/workflows/ci.yml/badge.svg)](https://github.com/qiyueqiu/ORACLE/actions/workflows/ci.yml)
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.20-363636?logo=solidity)
 ![Hardhat](https://img.shields.io/badge/Hardhat-2.x-FFF100?logo=hardhat&logoColor=black)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
@@ -56,9 +57,9 @@ flowchart TB
 | 层 | 技术 |
 | --- | --- |
 | **前端** | TypeScript · React 18 · Vite · Tailwind CSS · ethers.js v6 |
-| **后端 Agent** | Node.js · Express · SiliconFlow LLM API |
-| **区块链** | Hardhat · Solidity 0.8.20（本地网络 localhost:8545, chainId 31337） |
-| **核心机制** | DID 身份（哈希承诺 commit-reveal，非 ZKP）· 链上审计日志 · 信誉评分系统 |
+| **后端 Agent** | TypeScript（ESM，tsx 运行）· Node.js · Express · SiliconFlow LLM API |
+| **区块链** | Hardhat · Solidity 0.8.20 · TypeChain 类型化合约工厂（本地网络 localhost:8545, chainId 31337；Sepolia 公测网） |
+| **核心机制** | DID 身份（哈希承诺 commit-reveal，非 ZKP）· 双角色 EIP-712 审计日志 · 信誉评分系统 · 争议-罚没管线 |
 
 ## 项目结构
 
@@ -68,12 +69,13 @@ oracle/
 │   ├── AgentDID.sol        # Agent 去中心化身份 + 资质承诺验证
 │   ├── AuditLog.sol        # 调度决策审计追溯
 │   └── Reputation.sol      # 链上信誉分管理
-├── agents/                 # Node.js 后端 Agent 层
-│   ├── api-server.js        # Express API：调度 / 评分 / 信誉 等端点（含鉴权 + 限流）
-│   ├── router-agent.js      # Router：意图解析 → 候选筛选 → LLM 评分 → 选择
-│   ├── worker-agent.js      # Worker：链式思考执行任务，按复杂度选模型
-│   ├── reputation-analyzer.js  # 百分制信誉评分分析（0-100）
-│   └── siliconflow-client.js   # SiliconFlow LLM API 封装
+├── agents/                 # 后端 Agent 层（ESM TypeScript，tsx 运行）
+│   └── src/
+│       ├── api-server.ts       # Express API：调度 / 评分 / 信誉 等端点（含鉴权 + 限流）
+│       ├── router-agent.ts     # Router：意图解析 → 候选筛选 → LLM 评分 → 选择
+│       ├── worker-agents.ts    # Worker：链式思考执行任务，按复杂度选模型
+│       ├── reputation-analyzer.ts # 百分制信誉评分分析（0-100）
+│       └── siliconflow-client.ts  # SiliconFlow LLM API 封装
 ├── frontend/               # React 前端
 │   └── src/
 │       ├── contracts/abis.ts   # 合约 ABI 绑定
@@ -84,8 +86,9 @@ oracle/
 │       │   └── AuditLog.tsx    # 审计日志查询
 │       └── App.tsx             # Tab 路由
 ├── scripts/deploy.js       # 合约部署脚本
-├── test/                   # Hardhat 测试 + E2E 测试
-└── paper/                  # 配套学术论文（LaTeX 源 + PDF + Word）
+├── experiments/            # 成本 / 路由 / 争议实验脚本
+│   └── data/               # 实验产物 JSON（gas、成本前沿、延迟等）
+└── test/                   # Hardhat 合约测试 + E2E 测试
 ```
 
 ## 快速开始
@@ -110,7 +113,7 @@ npx hardhat run scripts/deploy.js --network localhost
 ```bash
 cd agents
 npm install
-node api-server.js          # Express API on :3001
+npm start                   # Express API on :3001（tsx src/api-server.ts）
 ```
 
 > 需配置环境变量（参考 `.env.example`）：`SILICONFLOW_API_KEY`（LLM 调用，必需）、`ROUTER_SIGNER_PRIVATE_KEY` / `REPUTATION_SIGNER_PRIVATE_KEY`（上链签名）、`API_ACCESS_KEYS`（API 鉴权，可选）。
@@ -208,17 +211,23 @@ sequenceDiagram
 ## 测试
 
 ```bash
-npx hardhat test            # 合约单元测试
-node test/e2e-test.js       # E2E 全流程测试（需先启动所有服务）
+npx hardhat test                    # 合约单元测试
+cd agents && npm run typecheck && npm run lint && npm test   # 后端类型检查 + lint + 测试
+node test/e2e-test.js               # E2E 全流程测试（需先启动所有服务）
 ```
 
-合约测试覆盖：注册、验证、调度、评分四个核心路径。
+合约测试覆盖注册、验证、调度、评分、争议-罚没等路径；后端覆盖鉴权、限流、签名与信誉分析。持续集成（GitHub Actions）在每次 push 自动运行合约 / 后端 / 前端三条流水线。
 
-## 配套论文
+## 实验复现
 
-`paper/` 目录包含课程论文《基于区块链的 LLM Agent 调度系统：可信路由与链上审计机制研究》：
+`experiments/` 下的脚本用真实测量数据复现论文中的成本与路由结果，产物写入 `experiments/data/*.json`：
 
-- `paper-academic.tex` — LaTeX 源（ctexart + xeCJK）
-- `基于区块链的LLM_Agent_调度系统_可信路由与链上审计机制研究.pdf` — 最终 PDF 交付物
-- `基于区块链的LLM_Agent_调度系统_可信路由与链上审计机制研究.docx` — Word 交付物
-- `figures/`、`references/`、`benchmark.json`、`gas-report.txt` — 配图、参考文献与实测数据
+```bash
+npx hardhat run experiments/gas-optimization.js   # 成本-可验证性前沿（gas 分解）
+npx hardhat run experiments/e3-e5-onchain.js      # 归属 / 争议-罚没 / 断路器 gas
+npx hardhat run experiments/e4-routing-sybil.js   # 信誉加权路由 + Sybil 分析
+```
+
+## 说明
+
+本仓库开源 ORACLE 的**系统实现**（合约、后端 Agent、前端、实验脚本与数据）。配套学术论文暂未公开，如有需要请联系作者。

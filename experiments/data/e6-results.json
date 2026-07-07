@@ -1,0 +1,158 @@
+{
+  "generatedNote": "E6 local Hardhat; real Reputation.sol + AgentStake.sol; deterministic; stamp time externally",
+  "scenario": {
+    "honestQuality": 85,
+    "badQuality": 20,
+    "qMatch": 60,
+    "reliableThreshold": 60,
+    "honestStake": 100,
+    "honestSelfRep": 100,
+    "budgets": [
+      2,
+      5,
+      10,
+      15,
+      20,
+      30,
+      40
+    ],
+    "note": "one honest rater (sqrt-weight 10 / stake-weight 100) rates bad agent its true low score 20; attacker floods with K max-score voters; measure bad agent's weighted avg under each mechanism"
+  },
+  "sqrtWeightedScan": [
+    {
+      "K": 2,
+      "honestWeight": 10,
+      "attackerWeight": 2,
+      "goodRep": 85,
+      "badRep": 33,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 5,
+      "honestWeight": 10,
+      "attackerWeight": 5,
+      "goodRep": 85,
+      "badRep": 46,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 10,
+      "honestWeight": 10,
+      "attackerWeight": 10,
+      "goodRep": 85,
+      "badRep": 60,
+      "badPassesReliable": true,
+      "routedToBad": false
+    },
+    {
+      "K": 15,
+      "honestWeight": 10,
+      "attackerWeight": 15,
+      "goodRep": 85,
+      "badRep": 68,
+      "badPassesReliable": true,
+      "routedToBad": false
+    },
+    {
+      "K": 20,
+      "honestWeight": 10,
+      "attackerWeight": 20,
+      "goodRep": 85,
+      "badRep": 73,
+      "badPassesReliable": true,
+      "routedToBad": false
+    },
+    {
+      "K": 30,
+      "honestWeight": 10,
+      "attackerWeight": 30,
+      "goodRep": 85,
+      "badRep": 80,
+      "badPassesReliable": true,
+      "routedToBad": false
+    },
+    {
+      "K": 40,
+      "honestWeight": 10,
+      "attackerWeight": 40,
+      "goodRep": 85,
+      "badRep": 84,
+      "badPassesReliable": true,
+      "routedToBad": false
+    }
+  ],
+  "stakeWeightedScan": [
+    {
+      "K": 2,
+      "honestWeight": 100,
+      "attackerWeight": 2,
+      "goodRep": 85,
+      "badRep": 21,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 5,
+      "honestWeight": 100,
+      "attackerWeight": 5,
+      "goodRep": 85,
+      "badRep": 23,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 10,
+      "honestWeight": 100,
+      "attackerWeight": 10,
+      "goodRep": 85,
+      "badRep": 27,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 15,
+      "honestWeight": 100,
+      "attackerWeight": 15,
+      "goodRep": 85,
+      "badRep": 30,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 20,
+      "honestWeight": 100,
+      "attackerWeight": 20,
+      "goodRep": 85,
+      "badRep": 33,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 30,
+      "honestWeight": 100,
+      "attackerWeight": 30,
+      "goodRep": 85,
+      "badRep": 38,
+      "badPassesReliable": false,
+      "routedToBad": false
+    },
+    {
+      "K": 40,
+      "honestWeight": 100,
+      "attackerWeight": 40,
+      "goodRep": 85,
+      "badRep": 42,
+      "badPassesReliable": false,
+      "routedToBad": false
+    }
+  ],
+  "breakdown": {
+    "sqrtReliableBreachAtBudget": 10,
+    "stakeReliableBreachAtBudget": null,
+    "cheapSybilRejectedUnderStake": true,
+    "note": "sqrt-weighting collapses once cheap Sybil count exceeds honest sqrt-weight (~10); stake-weighting requires the attacker to match honest STAKE (100), an order of magnitude more, and only with real slashable capital"
+  },
+  "keyInsight": "under matched attacker budgets, sqrt-weighting is breached by ~10-15 free accounts, while stake-weighting demands ~100 units of real locked (slashable) capital and rejects zero-stake voters outright — layer A turns cheap collusion into an economically self-defeating attack"
+}

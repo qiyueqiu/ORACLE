@@ -4,12 +4,21 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
+ * @notice AgentStake 的最小只读接口（评分权重按质押计价时读取质押额）。
+ */
+interface IAgentStake {
+    function getStake(address agent) external view returns (uint256);
+}
+
+/**
  * @title Reputation (改造 5)
  * @notice 百分制信誉系统，支持：
  *   - 评分权重：rater 自身信誉分越高，权重越大（防 Sybil）
  *   - 时间衰减：e^(-Δt / halfLife)，halfLife 由 owner 设置
  *   - 评分权限：可由 owner 收紧为白名单
  *   - 整数平方根（防溢出）
+ *   - 质押绑定评分权重（rateStakeWeighted）：权重 = 质押 / 单位，线性且守恒，
+ *     破解 √ 加权的拆分有利性与廉价 Sybil（论文 §4.3 A 层）
  *
  * 向后兼容：保留旧 addRating/getReputation 签名；新增 rateWeighted/timeDecayed/isReliableWeighted。
  */
@@ -33,6 +42,13 @@ contract Reputation is Ownable {
     uint256 public minRaterReputation;         // 评分者自身信誉门槛
     bool public restrictRaters;                // 是否仅白名单可评分
 
+    // ===== 质押绑定评分权重（论文 §4.3 A 层）=====
+    // weight = raterStake / stakeWeightUnit。质押线性且守恒：拆分一份质押到多账户，
+    // 各账户权重之和不变（≤ 原权重），拆分零获利；无质押者权重 0，廉价 Sybil 失效。
+    // 这与 √ 加权（拆分有利、新账户白送权重 1）形成对照，破解 Bennett 凹函数不可能性。
+    IAgentStake public agentStake;             // 质押源（AgentStake）
+    uint256 public stakeWeightUnit;            // 每单位权重对应的质押额（token base units）
+
     mapping(address => AgentReputation) public reputations;
     mapping(address => bool) public authorizedRater;
     address[] public agentList;
@@ -52,11 +68,13 @@ contract Reputation is Ownable {
 
     event RaterAuthorized(address indexed rater, bool allowed);
     event ConfigUpdated(uint256 halfLifeSeconds, uint256 minRaterReputation, bool restrictRaters);
+    event StakeWeightConfigUpdated(address indexed agentStake, uint256 stakeWeightUnit);
 
     constructor() Ownable(msg.sender) {
         halfLifeSeconds = 30 days;
         minRaterReputation = 0;
         restrictRaters = false;
+        stakeWeightUnit = 1e18;   // 默认 1 token = 1 单位权重
     }
 
     // ===== 旧版兼容：addRating 任意地址（权重 1，但同样遵守 restrictRaters） =====
@@ -79,6 +97,27 @@ contract Reputation is Ownable {
         }
         uint256 raterAvg = reputations[msg.sender].averageRating;
         uint256 weight = raterAvg == 0 ? 1 : _sqrt(raterAvg);
+        return _addRatingWeighted(agent, rating, weight);
+    }
+
+    // ===== 质押绑定评分（论文 §4.3 A 层）=====
+    // 权重 = raterStake / stakeWeightUnit（线性、守恒）。相较 rateWeighted 的 √ 加权：
+    //   - 廉价 Sybil：无质押 → weight 0 → revert，零成本刷分被彻底关闭；
+    //   - 账户拆分：把 S 的质押拆到 k 个账户，Σ⌊Sᵢ/U⌋ ≤ ⌊S/U⌋，拆分不获利（守恒），
+    //     与 √ 加权下 4×⌊√25⌋=20 > ⌊√100⌋=10 的拆分有利性正好相反。
+    // 要求已配置 agentStake；评分者须有质押。仍受 restrictRaters/minRaterReputation 约束。
+    function rateStakeWeighted(address agent, uint256 rating) external returns (uint256) {
+        require(address(agentStake) != address(0), "Stake source unset");
+        if (restrictRaters) {
+            require(authorizedRater[msg.sender], "Not authorized rater");
+        }
+        require(rating >= MIN_RATING && rating <= MAX_RATING, "Invalid rating");
+        require(agent != address(0), "Invalid address");
+        if (minRaterReputation > 0) {
+            require(reputations[msg.sender].averageRating >= minRaterReputation, "Low rater rep");
+        }
+        uint256 weight = agentStake.getStake(msg.sender) / stakeWeightUnit;
+        require(weight > 0, "No stake weight");
         return _addRatingWeighted(agent, rating, weight);
     }
 
@@ -212,6 +251,18 @@ contract Reputation is Ownable {
     function setAuthorizedRater(address rater, bool allowed) external onlyOwner {
         authorizedRater[rater] = allowed;
         emit RaterAuthorized(rater, allowed);
+    }
+
+    // 配置质押绑定评分权重的来源与计价单位（论文 §4.3 A 层）。
+    function setAgentStake(address _agentStake) external onlyOwner {
+        agentStake = IAgentStake(_agentStake);
+        emit StakeWeightConfigUpdated(_agentStake, stakeWeightUnit);
+    }
+
+    function setStakeWeightUnit(uint256 newUnit) external onlyOwner {
+        require(newUnit > 0, "Zero unit");
+        stakeWeightUnit = newUnit;
+        emit StakeWeightConfigUpdated(address(agentStake), newUnit);
     }
 
     // ===== 批量查询 =====

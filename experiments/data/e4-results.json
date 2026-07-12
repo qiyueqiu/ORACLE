@@ -3,61 +3,65 @@
   "routingAccuracy": {
     "groundTruthBest": "A",
     "nRounds": 200,
-    "design": "online learning from uniform prior (rep=50); noisy quality feedback; NOT initialized to ground-truth (fixes tautology)",
+    "design": "online learning from uniform prior (rep=50); noisy quality feedback; NOT initialized to ground-truth (fixes tautology). Baselines: ε-greedy (also learns, naive ε exploration) and pure random (no learning, no reputation).",
     "learnedReputation": {
-      "A": 90,
-      "B": 70,
+      "A": 89,
+      "B": 74,
       "C": 61,
-      "D": 45,
-      "E": 31
+      "D": 50,
+      "E": 36
     },
-    "reputationConvergedAtRound": 1,
-    "sqrtWeighted": 0.845,
-    "uniform": 0.255,
+    "reputationConvergedAtRound": 28,
+    "reputationWeighted": 0.805,
+    "sqrtWeighted": 0.805,
+    "epsilonGreedy": 0.91,
     "random": 0.23,
+    "steadyStateAccuracy": 0.9,
+    "steadyStateAccuracyEps": 0.88,
+    "steadyStateWindow": 50,
     "accuracyCurve": [
       {
         "round": 20,
-        "sqrtCumAcc": 0.65
+        "sqrtCumAcc": 0.6
       },
       {
         "round": 40,
-        "sqrtCumAcc": 0.675
+        "sqrtCumAcc": 0.7
       },
       {
         "round": 60,
-        "sqrtCumAcc": 0.7333333333333333
+        "sqrtCumAcc": 0.7
       },
       {
         "round": 80,
-        "sqrtCumAcc": 0.775
+        "sqrtCumAcc": 0.7375
       },
       {
         "round": 100,
-        "sqrtCumAcc": 0.81
+        "sqrtCumAcc": 0.74
       },
       {
         "round": 120,
-        "sqrtCumAcc": 0.825
+        "sqrtCumAcc": 0.7666666666666667
       },
       {
         "round": 140,
-        "sqrtCumAcc": 0.8357142857142857
+        "sqrtCumAcc": 0.7642857142857142
       },
       {
         "round": 160,
-        "sqrtCumAcc": 0.8375
+        "sqrtCumAcc": 0.78125
       },
       {
         "round": 180,
-        "sqrtCumAcc": 0.8444444444444444
+        "sqrtCumAcc": 0.7944444444444444
       },
       {
         "round": 200,
-        "sqrtCumAcc": 0.845
+        "sqrtCumAcc": 0.805
       }
     ],
-    "note": "sqrt-weighted online routing converges reputation to true-quality order and outperforms uniform/random; accuracy is LEARNED not assumed"
+    "note": "reputation-guided online routing converges reputation to true-quality order and beats an ε-greedy learner and a random baseline; cumulative accuracy is LEARNED not assumed. steady-state (last-50) accuracy isolates post-convergence routing quality from cold-start exploration cost."
   },
   "collusion": {
     "ringSize": 5,

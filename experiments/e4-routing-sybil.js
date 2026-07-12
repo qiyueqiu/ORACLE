@@ -38,63 +38,101 @@ async function main() {
   ];
   const trueBest = "A";
   const N_ROUNDS = 200;
-  const noiseRng = makeRng(42);
 
-  // 带噪声的质量反馈:agent 执行后,评分 ~ quality ± 噪声(模拟单次任务质量波动)
-  function qualityFeedback(a) {
-    return Math.max(0, Math.min(100, Math.round(a.quality + (noiseRng() - 0.5) * 30)));
+  // 带噪声的质量反馈:agent 执行后,评分 ~ quality ± 噪声(模拟单次任务质量波动)。
+  // 每个学习型策略用独立噪声流,避免策略间因共享随机源而相互耦合。
+  function makeFeedback(rng) {
+    return (a) => Math.max(0, Math.min(100, Math.round(a.quality + (rng() - 0.5) * 30)));
   }
+  const feedbackRep = makeFeedback(makeRng(42));  // reputation-weighted (ours)
+  const feedbackEps = makeFeedback(makeRng(123)); // ε-greedy 基线,独立噪声流
+
   // 在线信誉(模拟 Reputation.sol 加权平均):各策略独立维护自己的信誉表
   function freshRep() { const r = {}; for (const a of agents) r[a.id] = { tot: 50, cnt: 1 }; return r; }
   function avg(rep, id) { return rep[id].tot / rep[id].cnt; }
   function update(rep, id, score) { rep[id].tot += score; rep[id].cnt += 1; }
 
-  // sqrt 加权路由:选当前信誉加权分最高者(score=0.6*60+0.4*0.4*avg);
-  // 为让信誉有机会被学习,前若干轮对未充分采样者探索(UCB 式轻探索)
-  function pickSqrt(rep, round) {
-    let best = null, bs = -1;
-    for (const a of agents) {
-      const explore = Math.sqrt(Math.log(round + 1) / rep[a.id].cnt) * 8; // 轻量 UCB 探索项
-      const s = 0.6 * 60 + 0.4 * (0.4 * avg(rep, a.id)) + explore;
-      if (s > bs) { bs = s; best = a; }
+  // 随机 tie-break 的 argmax:冷启动时所有候选打分相等(如 avg 全为先验 50),
+  // 朴素 argmax 取数组第一个会把最优 agent 恰好排在首位的偶然性变成系统性优势
+  // (一种实现假象)。平局时在并列候选中随机取,消除数组顺序偏置。
+  function argmaxRandomTie(cands, scoreFn, rng) {
+    let best = -Infinity, ties = [];
+    for (const a of cands) {
+      const s = scoreFn(a);
+      if (s > best + 1e-12) { best = s; ties = [a]; }
+      else if (Math.abs(s - best) <= 1e-12) ties.push(a);
     }
-    return best;
+    return ties[Math.floor(rng() * ties.length)];
   }
-  // 平权:ε-greedy,无信誉加权(代表"无信誉信息"基线,纯探索)
-  function pickUniform(rng) { return agents[Math.floor(rng() * agents.length)]; }
 
-  const repSqrt = freshRep();
-  const rngU = makeRng(7), rngR = makeRng(99);
-  let hitSqrt = 0, hitUniform = 0, hitRandom = 0;
-  const accCurve = []; // 每 20 轮记录 sqrt 策略的累积准确率
-  let convergedRound = -1;
+  // (ours) 信誉引导路由:选当前信誉分最高者(score=0.6*60+0.4*0.4*avg;所有候选均
+  // qMatch,故 q=60 为常数,排序完全由信誉项 0.16*avg 决定),叠加 UCB 式轻量探索项
+  // 让信誉在初期得以被采样学习。
+  function pickReputation(rep, round, rng) {
+    return argmaxRandomTie(agents, (a) => {
+      const explore = Math.sqrt(Math.log(round + 1) / rep[a.id].cnt) * 8; // 轻量 UCB 探索项
+      return 0.6 * 60 + 0.4 * (0.4 * avg(rep, a.id)) + explore;
+    }, rng);
+  }
+  // ε-greedy 基线(ε=0.1):同样在线学习信誉,但以概率 ε 纯随机探索、否则贪婪利用当前
+  // 信誉最高者。标准 bandit 对照——它与 ours 都利用学到的信誉,差别只在探索策略(朴素
+  // ε vs UCB),故可隔离「增益来自信誉利用,还是来自探索机制」;而 random 是唯一完全
+  // 不使用信誉信息的基线。
+  const EPSILON = 0.1;
+  function pickEpsilonGreedy(rep, rng) {
+    if (rng() < EPSILON) return agents[Math.floor(rng() * agents.length)];
+    return argmaxRandomTie(agents, (a) => avg(rep, a.id), rng);
+  }
+
+  const repRep = freshRep();
+  const repEps = freshRep();
+  const rngRepTie = makeRng(11); // ours 的 tie-break 随机流
+  const rngEps = makeRng(7);   // ε-greedy 探索 + tie-break 随机流
+  const rngR = makeRng(99);    // 纯随机基线
+  let hitRep = 0, hitEps = 0, hitRandom = 0;
+  const STEADY = 50;           // 稳态窗口:末 50 轮(收敛后的真实路由质量)
+  let steadyHitRep = 0, steadyHitEps = 0;
+  const accCurve = []; // 每 20 轮记录 ours 的累积准确率
+  let convergedRound = -1, stableStreak = 0;
 
   for (let i = 0; i < N_ROUNDS; i++) {
-    // sqrt 加权策略:选 → 执行 → 反馈更新信誉
-    const pickedSqrt = pickSqrt(repSqrt, i);
-    update(repSqrt, pickedSqrt.id, qualityFeedback(pickedSqrt));
-    if (pickedSqrt.id === trueBest) hitSqrt++;
-    // 平权 / 随机基线(无学习)
-    if (pickUniform(rngU).id === trueBest) hitUniform++;
+    const inSteady = i >= N_ROUNDS - STEADY;
+    // (ours) 信誉引导:选 → 执行 → 反馈更新信誉
+    const pickedRep = pickReputation(repRep, i, rngRepTie);
+    update(repRep, pickedRep.id, feedbackRep(pickedRep));
+    if (pickedRep.id === trueBest) { hitRep++; if (inSteady) steadyHitRep++; }
+    // ε-greedy 基线:同样学习,朴素探索
+    const pickedEps = pickEpsilonGreedy(repEps, rngEps);
+    update(repEps, pickedEps.id, feedbackEps(pickedEps));
+    if (pickedEps.id === trueBest) { hitEps++; if (inSteady) steadyHitEps++; }
+    // 纯随机基线(无学习,不使用信誉信息)
     if (agents[Math.floor(rngR() * agents.length)].id === trueBest) hitRandom++;
 
-    // 信誉排序是否已收敛到真实质量排序(A>B>C>D>E)
-    const sorted = [...agents].sort((x, y) => avg(repSqrt, y.id) - avg(repSqrt, x.id));
-    if (convergedRound < 0 && sorted.map(a => a.id).join("") === "ABCDE") convergedRound = i + 1;
-    if ((i + 1) % 20 === 0) accCurve.push({ round: i + 1, sqrtCumAcc: hitSqrt / (i + 1) });
+    // 信誉排序收敛判据:所有候选都被充分采样(≥2 次,排除冷启动全 50 平局的排序假象)
+    // 且连续 5 轮稳定为真实质量排序(A>B>C>D>E)才算收敛。
+    const allSampled = agents.every((a) => repRep[a.id].cnt >= 3); // 先验 cnt=1,故 ≥3 表示被选过 ≥2 次
+    const sorted = [...agents].sort((x, y) => avg(repRep, y.id) - avg(repRep, x.id));
+    const ordered = allSampled && sorted.map(a => a.id).join("") === "ABCDE";
+    stableStreak = ordered ? stableStreak + 1 : 0;
+    if (convergedRound < 0 && stableStreak >= 5) convergedRound = i + 1 - 4;
+    if ((i + 1) % 20 === 0) accCurve.push({ round: i + 1, sqrtCumAcc: hitRep / (i + 1) });
   }
 
   const routingAccuracy = {
     groundTruthBest: trueBest,
     nRounds: N_ROUNDS,
-    design: "online learning from uniform prior (rep=50); noisy quality feedback; NOT initialized to ground-truth (fixes tautology)",
-    learnedReputation: Object.fromEntries(agents.map(a => [a.id, Math.round(avg(repSqrt, a.id))])),
+    design: "online learning from uniform prior (rep=50); noisy quality feedback; NOT initialized to ground-truth (fixes tautology). Baselines: ε-greedy (also learns, naive ε exploration) and pure random (no learning, no reputation).",
+    learnedReputation: Object.fromEntries(agents.map(a => [a.id, Math.round(avg(repRep, a.id))])),
     reputationConvergedAtRound: convergedRound,
-    sqrtWeighted: hitSqrt / N_ROUNDS,
-    uniform: hitUniform / N_ROUNDS,
+    reputationWeighted: hitRep / N_ROUNDS,
+    sqrtWeighted: hitRep / N_ROUNDS,          // 向后兼容旧 key(值 = reputationWeighted)
+    epsilonGreedy: hitEps / N_ROUNDS,
     random: hitRandom / N_ROUNDS,
+    steadyStateAccuracy: steadyHitRep / STEADY,
+    steadyStateAccuracyEps: steadyHitEps / STEADY,
+    steadyStateWindow: STEADY,
     accuracyCurve: accCurve,
-    note: "sqrt-weighted online routing converges reputation to true-quality order and outperforms uniform/random; accuracy is LEARNED not assumed",
+    note: "reputation-guided online routing converges reputation to true-quality order and beats an ε-greedy learner and a random baseline; cumulative accuracy is LEARNED not assumed. steady-state (last-50) accuracy isolates post-convergence routing quality from cold-start exploration cost.",
   };
 
   // ===== (B) 老信誉串谋场景(真实 Reputation.sol) =====

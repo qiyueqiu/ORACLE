@@ -2,6 +2,11 @@
   "name": "oracle-blockchain-demo",
   "version": "1.0.0",
   "description": "ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qiyueqiu/ORACLE.git"
+  },
   "scripts": {
     "compile": "hardhat compile",
     "typechain": "hardhat compile",

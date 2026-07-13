@@ -23,6 +23,10 @@ debug-*.png
 .DS_Store
 Thumbs.db
 
+# Editor
+.vscode/
+.idea/
+
 # Env
 .env
 

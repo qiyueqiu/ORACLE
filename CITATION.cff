@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+title: >-
+  ORACLE — On-chain Reputation & Audit for Coordinated
+  LLM-Agent Execution
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Qiyue
+    family-names: Qiu
+    email: qiyueqiu777@qq.com
+repository-code: 'https://github.com/qiyueqiu/ORACLE'
+abstract: >-
+  ORACLE binds LLM-driven agent dispatch to an on-chain
+  trust and audit layer. A router agent's decision and a
+  worker agent's result are co-signed into a single
+  dual-role EIP-712 audit record, reconstructed and
+  verified on-chain, so a dispatch is non-repudiable. The
+  relay that submits transactions holds no signing key and
+  cannot forge or replay an attribution. Disputes drive a
+  stake-slashing loop into reputation, guarded by a circuit
+  breaker that never slashes a successful execution. Three
+  Solidity contracts (AgentDID, AuditLog, Reputation)
+  provide the substrate, a TypeScript backend hosts the
+  agents, and a React frontend drives the flow.
+keywords:
+  - blockchain
+  - LLM agents
+  - EIP-712
+  - reputation
+  - audit
+  - agent routing
+  - non-repudiation
+license: MIT
+version: 1.0.0

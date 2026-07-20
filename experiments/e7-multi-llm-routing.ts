@@ -353,7 +353,12 @@ async function main() {
     else console.log(`ℹ ${m.keyEnv} 未设置,跳过 ${m.label}(待补 key 后重跑并入表)`);
   }
 
-  if (pool.length === 0) { console.error('无可用模型池(缺 key)。'); process.exit(1); }
+  // MODELS=Qwen2.5-7B,Llama-3.3-70B → 仅跑指定 label(诊断/局部重跑用,逗号分隔)。
+  const only = (process.env.MODELS || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const filtered = only.length ? pool.filter((m) => only.includes(m.label)) : pool;
+  if (only.length) console.log(`ℹ MODELS 过滤 → 仅跑: ${filtered.map((m) => m.label).join(', ') || '(无匹配)'}`);
+
+  if (filtered.length === 0) { console.error('无可用模型池(缺 key 或 MODELS 无匹配)。'); process.exit(1); }
 
   // 每个「key+base」组合缓存一个 client(GPT 与 Llama 可指向不同供应商)。
   // SiliconFlow 池关闭推理(enable_thinking=false),使 DeepSeek-V3 等混合推理模型
@@ -371,9 +376,9 @@ async function main() {
   };
 
   // ── preflight 探活,过滤不可用模型(不静默截断:记录 skipped)──
-  console.log(`\n=== E7 preflight（探活 ${pool.length} 个候选模型）===`);
+  console.log(`\n=== E7 preflight（探活 ${filtered.length} 个候选模型）===`);
   const available: ModelSpec[] = []; const skipped: Array<{ label: string; model: string; reason: string }> = [];
-  for (const m of pool) {
+  for (const m of filtered) {
     const { ok, reason } = await probe(clientFor(m), m.model);
     if (ok) { available.push(m); console.log(`  ✓ ${m.label} (${m.model})`); }
     else { skipped.push({ label: m.label, model: m.model, reason: reason || 'unknown' }); console.log(`  ✗ ${m.label} (${m.model}) — ${reason}`); }
@@ -385,7 +390,7 @@ async function main() {
   // 模型直接复用,避免大模型慢导致的超时前功尽弃。FRESH=1 强制重算。
   const outDir = join(__dirname, 'data');
   mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, 'e7-results.json');
+  const outPath = join(outDir, process.env.OUT || 'e7-results.json');
   const FRESH = process.env.FRESH === '1';
   const externalIncluded = available.some((m) => m.provider === 'openai');
 

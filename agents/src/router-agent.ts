@@ -221,7 +221,8 @@ export class RouterAgent {
         this.scoringModel,
         [{ role: 'user', content: prompt }],
         { rankings: [], decision: '' },
-        { max_tokens: 1600 },
+        // SCORING_JSON_MODE=1 → 经 response_format 强制合法 JSON（救小模型截断；大模型 no-op）。
+        { max_tokens: 1600, jsonMode: process.env.SCORING_JSON_MODE === '1' },
       );
 
       this.executionLog.push({

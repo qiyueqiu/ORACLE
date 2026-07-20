@@ -142,7 +142,7 @@ export class SiliconFlowClient {
     model: string,
     messages: ChatMessage[],
     schema: Record<string, unknown> = {},
-    options: { max_tokens?: number } = {},
+    options: { max_tokens?: number; jsonMode?: boolean } = {},
   ): Promise<LLMJsonResponse<T>> {
     // 把格式要求合并到 system 消息，避免注入问题
     const schemaStr = JSON.stringify(schema, null, 2);
@@ -150,10 +150,13 @@ export class SiliconFlowClient {
 
     const enhancedMessages: ChatMessage[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
-    // max_tokens 默认 1000；打分等含多候选推导的调用可上调，避免大模型冗长输出被截断成非法 JSON
+    // max_tokens 默认 1000；打分等含多候选推导的调用可上调，避免大模型冗长输出被截断成非法 JSON。
+    // jsonMode=true 时经 response_format 强制端点输出合法 JSON（OpenAI 兼容），
+    // 主要救小模型的格式截断；对大模型是 no-op（本就输出合法 JSON）。
     const result = await this.chat(model, enhancedMessages, {
       temperature: 0.1,
       max_tokens: options.max_tokens ?? 1000,
+      ...(options.jsonMode ? { extraBody: { response_format: { type: 'json_object' } } } : {}),
     });
 
     // 提取 JSON

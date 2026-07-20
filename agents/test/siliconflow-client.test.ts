@@ -18,7 +18,8 @@ describe('agents/siliconflow-client', function () {
   beforeEach(function () {
     instance = axios.create();
     mock = new MockAdapter(instance);
-    client = new SiliconFlowClient('test-api-key', instance);
+    // 默认关重试:多数用例只验证成功/错误传播,不应被退避拖慢。
+    client = new SiliconFlowClient('test-api-key', instance, undefined, { maxRetries: 0 });
   });
 
   afterEach(function () {
@@ -52,6 +53,43 @@ describe('agents/siliconflow-client', function () {
       expect(capturedBody!.max_tokens).to.equal(100);
     });
 
+    it('Should NOT include enable_thinking by default', async function () {
+      let capturedBody: Record<string, unknown> | null = null;
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(function (config) {
+        capturedBody = JSON.parse(config.data as string) as Record<string, unknown>;
+        return [200, { choices: [{ message: { content: 'ok' } }], usage: {} }];
+      });
+
+      await client.chat('m', [{ role: 'user', content: 'x' }]);
+      expect(capturedBody!).to.not.have.property('enable_thinking');
+    });
+
+    it('Should inject enable_thinking=false when disableThinking is set', async function () {
+      const inst = axios.create();
+      const m = new MockAdapter(inst);
+      const thinkOffClient = new SiliconFlowClient('k', inst, undefined, { disableThinking: true });
+      let capturedBody: Record<string, unknown> | null = null;
+      m.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(function (config) {
+        capturedBody = JSON.parse(config.data as string) as Record<string, unknown>;
+        return [200, { choices: [{ message: { content: 'ok' } }], usage: {} }];
+      });
+
+      await thinkOffClient.chat('m', [{ role: 'user', content: 'x' }]);
+      expect(capturedBody!.enable_thinking).to.equal(false);
+      m.restore();
+    });
+
+    it('Should pass extraBody fields through to the request', async function () {
+      let capturedBody: Record<string, unknown> | null = null;
+      mock.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(function (config) {
+        capturedBody = JSON.parse(config.data as string) as Record<string, unknown>;
+        return [200, { choices: [{ message: { content: 'ok' } }], usage: {} }];
+      });
+
+      await client.chat('m', [{ role: 'user', content: 'x' }], { extraBody: { enable_thinking: false } });
+      expect(capturedBody!.enable_thinking).to.equal(false);
+    });
+
     it('Should propagate network errors', async function () {
       mock.onPost('https://api.siliconflow.cn/v1/chat/completions').networkError();
 
@@ -72,6 +110,59 @@ describe('agents/siliconflow-client', function () {
       } catch (e) {
         expect((e as Error).message).to.include('SiliconFlow API error');
       }
+    });
+
+    it('Should retry on 429 then succeed (transient rate-limit)', async function () {
+      this.timeout(8000);
+      const inst = axios.create();
+      const m = new MockAdapter(inst);
+      const retryClient = new SiliconFlowClient('k', inst, undefined, { maxRetries: 3 });
+      let calls = 0;
+      m.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(function () {
+        calls++;
+        if (calls <= 2) return [429, { error: 'rate limited' }];
+        return [200, { choices: [{ message: { content: 'ok' } }], usage: { total_tokens: 3 } }];
+      });
+      const result = await retryClient.chat('m', [{ role: 'user', content: 'x' }]);
+      expect(result.content).to.equal('ok');
+      expect(calls).to.equal(3); // 两次 429 + 一次成功
+    });
+
+    it('Should NOT retry on 4xx semantic errors (e.g. 401)', async function () {
+      const inst = axios.create();
+      const m = new MockAdapter(inst);
+      const retryClient = new SiliconFlowClient('k', inst, undefined, { maxRetries: 3 });
+      let calls = 0;
+      m.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(function () {
+        calls++;
+        return [401, { error: 'invalid api key' }];
+      });
+      try {
+        await retryClient.chat('m', [{ role: 'user', content: 'x' }]);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as Error).message).to.include('SiliconFlow API error');
+      }
+      expect(calls).to.equal(1); // 401 非瞬时,不重试
+    });
+
+    it('Should give up after maxRetries and throw (persistent 429)', async function () {
+      this.timeout(8000);
+      const inst = axios.create();
+      const m = new MockAdapter(inst);
+      const retryClient = new SiliconFlowClient('k', inst, undefined, { maxRetries: 2 });
+      let calls = 0;
+      m.onPost('https://api.siliconflow.cn/v1/chat/completions').reply(function () {
+        calls++;
+        return [429, { error: 'rate limited' }];
+      });
+      try {
+        await retryClient.chat('m', [{ role: 'user', content: 'x' }]);
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect((e as Error).message).to.include('SiliconFlow API error');
+      }
+      expect(calls).to.equal(3); // 初次 + 2 次重试
     });
   });
 

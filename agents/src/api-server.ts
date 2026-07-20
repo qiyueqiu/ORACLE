@@ -169,6 +169,8 @@ const routerAgent = new RouterAgent(
   CONFIG.SILICONFLOW_API_KEY,
   CONFIG.PROVIDER_URL,
   CONFIG.CONTRACT_ADDRESSES,
+  undefined,
+  process.env.SCORING_MODEL || undefined, // 未设则用 DEFAULT_SCORING_MODEL(14B)
 );
 const reputationAnalyzer = new ReputationAnalyzerAgent(
   CONFIG.SILICONFLOW_API_KEY,

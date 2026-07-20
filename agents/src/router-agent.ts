@@ -39,10 +39,21 @@ export function clampScore(score: number): number {
   return Math.min(100, Math.max(0, score));
 }
 
+/**
+ * 路由 LLM 阶段的默认打分模型；可经构造参数覆盖以做多模型泛化评估。
+ * 选 14B 而非 7B:E7 泛化实验证实 7B 低于打分能力阈值(打分调用 100% 触发确定性
+ * 兜底,且在"rankings 必须完整"prompt 下持续生成至 30s 超时);14B 是最小的
+ * 稳定出合法 JSON 的规模(E7:top1=75%,τ=0.75,fallback=0%),作生产默认更代表
+ * 真实流水线。可经 SCORING_MODEL 环境变量覆盖。
+ */
+export const DEFAULT_SCORING_MODEL = 'Qwen/Qwen2.5-14B-Instruct';
+
 export class RouterAgent {
   private llm: SiliconFlowClient;
   private provider: ethers.JsonRpcProvider;
   private contracts: { agentDID: AgentDID; reputation: Reputation };
+  /** 意图解析 + 候选打分所用的 LLM 模型名；决策/兜底逻辑与模型无关。 */
+  private scoringModel: string;
   executionLog: ExecutionLogEntry[];
 
   constructor(
@@ -50,8 +61,12 @@ export class RouterAgent {
     providerUrl: string,
     contractAddresses: ContractAddresses,
     siliconflowClient?: SiliconFlowClient,
+    scoringModel: string = DEFAULT_SCORING_MODEL,
   ) {
-    this.llm = siliconflowClient || new SiliconFlowClient(apiKey);
+    // 自建 client 默认走 SiliconFlow,关闭推理:打分是结构化算分任务,扩展推理只增
+    // 延迟与截断风险,无益于按公式 (3) 打分。注入的 client(如指向 OpenAI)由调用方自定。
+    this.llm = siliconflowClient || new SiliconFlowClient(apiKey, undefined, undefined, { disableThinking: true });
+    this.scoringModel = scoringModel;
     this.provider = new ethers.JsonRpcProvider(providerUrl);
     this.contracts = {
       agentDID: AgentDID__factory.connect(contractAddresses.AgentDID, this.provider),
@@ -71,7 +86,7 @@ export class RouterAgent {
 
     try {
       const result = await this.llm.chatWithJson<Partial<Intent>>(
-        'Qwen/Qwen2.5-7B-Instruct',
+        this.scoringModel,
         [{ role: 'user', content: prompt }],
         { intent: '', requiredQualification: '', complexity: '', priority: '' },
       );
@@ -80,7 +95,7 @@ export class RouterAgent {
         stepId,
         stepType: 'llm_call',
         agent: 'Router',
-        model: 'Qwen/Qwen2.5-7B-Instruct',
+        model: this.scoringModel,
         phase: 'intent_parsing',
         input: prompt,
         output: JSON.stringify(result.data, null, 2),
@@ -120,7 +135,7 @@ export class RouterAgent {
         stepId,
         stepType: 'llm_call',
         agent: 'Router',
-        model: 'Qwen/Qwen2.5-7B-Instruct',
+        model: this.scoringModel,
         phase: 'intent_parsing',
         input: prompt,
         output: `Fallback: requiredQualification=${requiredQualification} (${error instanceof Error ? error.message : String(error)})`,
@@ -180,28 +195,40 @@ export class RouterAgent {
     // 精简候选信息
     const candidatesSummary = candidates
       .map(
+        // 两处措辞修复(诊断确认的大模型失分主因)：
+        // 1) 行首用 0 基 `index=i`，与返回 JSON 的 index 字段严格对齐 —— 旧写法 `#${i+1}`
+        //    是 1 基显示，会诱导模型按可见序号返回 index（如把首位返回成 1），
+        //    经 candidates[index] 回填时错位，选错 Agent。
+        // 2) 信誉渲染为「平均分/100」：旧写法 `${avgRating}/5` 把百分制均分误显为五分制
+        //    分母，诱导按字面做算术的模型算成 avgRating/5（如 80→16），污染打分。
         (c, i) =>
-          `#${i + 1} ${c.did} | 资质:${c.qualification} | 信誉:${c.avgRating}/5 (${c.ratingCount}评)`,
+          `index=${i} | ${c.did} | 资质:${c.qualification} | 平均信誉:${c.avgRating}/100（${c.ratingCount}次评价）`,
       )
       .join('\n');
 
-    const prompt = `任务: ${intent.intent}\n资质要求: ${requiredQualification}\n\nAgent列表:\n${candidatesSummary}\n\n评分规则（与论文公式 (3) 一致）: score = 0.6*q + 0.4*rNorm，q∈{60,40}（资质匹配 60，否则 40），rNorm = avgRating*0.4（百分制 0-100 → 0-40），满分 100。\n返回JSON: {"rankings":[{"index":0,"score":85,"reason":"..."}],"decision":"选择理由"}`;
+    // rankings 必须覆盖全部候选:示例给多元素 + 显式声明条数,避免 GPT/Llama 照单元素
+    // 示例只返回 1 条(实测云雾端点 GPT-4o/Llama-3.3 有此倾向),否则 Kendall τ 无法计算。
+    const n = candidates.length;
+    const prompt = `任务: ${intent.intent}\n资质要求: ${requiredQualification}\n\nAgent列表（共 ${n} 个）:\n${candidatesSummary}\n\n评分规则（与论文公式 (3) 一致）: score = 0.6*q + 0.4*rNorm，q∈{60,40}（资质匹配 60，否则 40），rNorm = 平均信誉*0.4（百分制 0-100 → 0-40），满分 100。\n对每个 Agent 严格按上式计算，reason 用一句话给出算式与结果，不要展开长篇推理。\nrankings 必须包含全部 ${n} 个 Agent，每个 index 各一条（共 ${n} 条），不得省略；每项 index 与上面对应行开头的 index= 数字完全一致（从 0 开始）。\n返回JSON: {"rankings":[{"index":0,"score":85,"reason":"..."},{"index":1,"score":72,"reason":"..."}],"decision":"选择理由"}`;
 
     const stepId = this.generateStepId();
     const startTime = Date.now();
 
     try {
+      // max_tokens 上调到 1600：多候选逐一算分的输出比默认 1000 长，大模型尤甚，
+      // 过低会把 rankings 数组截断成非法 JSON，误触 fallback（诊断确认的 72B 失分主因）。
       const result = await this.llm.chatWithJson<{ rankings?: IntentRanking[]; decision?: string }>(
-        'Qwen/Qwen2.5-7B-Instruct',
+        this.scoringModel,
         [{ role: 'user', content: prompt }],
         { rankings: [], decision: '' },
+        { max_tokens: 1600 },
       );
 
       this.executionLog.push({
         stepId,
         stepType: 'llm_call',
         agent: 'Router',
-        model: 'Qwen/Qwen2.5-7B-Instruct',
+        model: this.scoringModel,
         phase: 'candidate_evaluation',
         input: prompt.substring(0, 300) + '...',
         output: JSON.stringify(result.data, null, 2),
@@ -227,7 +254,7 @@ export class RouterAgent {
         stepId,
         stepType: 'llm_call',
         agent: 'Router',
-        model: 'Qwen/Qwen2.5-7B-Instruct',
+        model: this.scoringModel,
         phase: 'candidate_evaluation',
         input: prompt.substring(0, 300) + '...',
         output: `Fallback to rule-based: ${error instanceof Error ? error.message : String(error)}`,

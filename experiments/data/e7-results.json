@@ -1,0 +1,974 @@
+{
+  "generatedNote": "E7 multi-LLM routing generalization; reuses production RouterAgent.evaluateCandidates; ground-truth = deterministic ruleScore (paper Eq.3); stamp time externally",
+  "method": {
+    "groundTruth": "ruleScore(candidate, requiredQualification) = 0.6*q + 0.4*(avgRating*0.4), q∈{60,40}",
+    "metrics": [
+      "top1Accuracy (LLM-selected best == rule best; fallback runs counted as miss)",
+      "avgKendallTau (rank fidelity vs rule ordering)",
+      "fallbackRate (JSON-parse failure → deterministic fallback)"
+    ],
+    "reuseNote": "production evaluateCandidates path exercised verbatim; only the scoring model id is swapped (RouterAgent scoringModel param) — model-agnostic by construction",
+    "design": "four-family coverage (Qwen/DeepSeek/Llama/GPT per reviewer R1-2), all late-2024 generation for fair cross-family comparison (avoids conflating architecture differences with newer-model effects): scale axis = Qwen2.5 dense 7/14/32/72B (architecture fixed, params varied); family axis = DeepSeek-V3 (671B MoE) / Llama-3.3-70B / GPT-4o-2024-11-20 vs Qwen2.5-72B pivot. 7B is the robustness lower bound: when a small model cannot emit valid JSON, the deterministic ruleScore fallback takes over and routing stays correct.",
+    "scenarioKinds": [
+      "match-dominant",
+      "multi-match-by-rep",
+      "reputation-inversion (trap)",
+      "boundary"
+    ],
+    "externalIncluded": true,
+    "externalNote": "GPT-4o / Llama-3.3-70B included via independent OpenAI-compatible endpoints (both late-2024, same generation as Qwen2.5/DeepSeek-V3)"
+  },
+  "groundTruthSelfCheck": [
+    {
+      "id": "S01",
+      "kind": "match-dominant",
+      "gtTop1Did": "did:agent:reviewer-hi",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S02",
+      "kind": "multi-match-by-rep",
+      "gtTop1Did": "did:agent:analyst-hi",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S03",
+      "kind": "reputation-inversion",
+      "gtTop1Did": "did:agent:researcher-top",
+      "gtTop1Match": false,
+      "tie": false
+    },
+    {
+      "id": "S04",
+      "kind": "match-dominant",
+      "gtTop1Did": "did:agent:poet",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S05",
+      "kind": "boundary",
+      "gtTop1Did": "did:agent:researcher-ok",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S06",
+      "kind": "multi-match-by-rep",
+      "gtTop1Did": "did:agent:sec-b",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S07",
+      "kind": "reputation-inversion",
+      "gtTop1Did": "did:agent:analyst-hi",
+      "gtTop1Match": false,
+      "tie": false
+    },
+    {
+      "id": "S08",
+      "kind": "match-dominant",
+      "gtTop1Did": "did:agent:weather",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S09",
+      "kind": "multi-match-by-rep",
+      "gtTop1Did": "did:agent:content-hi",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S10",
+      "kind": "boundary",
+      "gtTop1Did": "did:agent:analyst-ok",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S11",
+      "kind": "reputation-inversion",
+      "gtTop1Did": "did:agent:translator-lo",
+      "gtTop1Match": true,
+      "tie": false
+    },
+    {
+      "id": "S12",
+      "kind": "multi-match-by-rep",
+      "gtTop1Did": "did:agent:fe-b",
+      "gtTop1Match": true,
+      "tie": false
+    }
+  ],
+  "skippedModels": [],
+  "models": [
+    {
+      "label": "Qwen2.5-7B",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "provider": "siliconflow",
+      "axis": "scale",
+      "params": 7,
+      "top1Accuracy": 0,
+      "avgKendallTau": null,
+      "fallbackRate": 1,
+      "scenarios": 12,
+      "repeat": 1,
+      "partial": false,
+      "perScenario": [
+        {
+          "id": "S01",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S02",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S03",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S04",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S05",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S06",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S07",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S08",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S09",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S10",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S11",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S12",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        }
+      ]
+    },
+    {
+      "label": "Qwen2.5-14B",
+      "model": "Qwen/Qwen2.5-14B-Instruct",
+      "provider": "siliconflow",
+      "axis": "scale",
+      "params": 14,
+      "top1Accuracy": 0.75,
+      "avgKendallTau": 0.75,
+      "fallbackRate": 0,
+      "scenarios": 12,
+      "repeat": 1,
+      "partial": false,
+      "perScenario": [
+        {
+          "id": "S01",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S02",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S03",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": 0.3333333333333333
+        },
+        {
+          "id": "S04",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S05",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S06",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": 0.6666666666666666
+        },
+        {
+          "id": "S07",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": -1
+        },
+        {
+          "id": "S08",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S09",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S10",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S11",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S12",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        }
+      ]
+    },
+    {
+      "label": "Qwen2.5-32B",
+      "model": "Qwen/Qwen2.5-32B-Instruct",
+      "provider": "siliconflow",
+      "axis": "scale",
+      "params": 32,
+      "top1Accuracy": 0.75,
+      "avgKendallTau": 0.75,
+      "fallbackRate": 0,
+      "scenarios": 12,
+      "repeat": 1,
+      "partial": false,
+      "perScenario": [
+        {
+          "id": "S01",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S02",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S03",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": 0.3333333333333333
+        },
+        {
+          "id": "S04",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S05",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S06",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": 0.6666666666666666
+        },
+        {
+          "id": "S07",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": -1
+        },
+        {
+          "id": "S08",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S09",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S10",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S11",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S12",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        }
+      ]
+    },
+    {
+      "label": "Qwen2.5-72B",
+      "model": "Qwen/Qwen2.5-72B-Instruct",
+      "provider": "siliconflow",
+      "axis": "scale",
+      "params": 72,
+      "top1Accuracy": 0.8333,
+      "avgKendallTau": 0.7778,
+      "fallbackRate": 0,
+      "scenarios": 12,
+      "repeat": 1,
+      "partial": false,
+      "perScenario": [
+        {
+          "id": "S01",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S02",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S03",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": 0.3333333333333333
+        },
+        {
+          "id": "S04",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S05",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S06",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S07",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": -1
+        },
+        {
+          "id": "S08",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S09",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S10",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S11",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S12",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        }
+      ]
+    },
+    {
+      "label": "DeepSeek-V3",
+      "model": "deepseek-ai/DeepSeek-V3",
+      "provider": "siliconflow",
+      "axis": "family",
+      "params": 671,
+      "sizeLabel": "671B MoE (37B active)",
+      "top1Accuracy": 0.75,
+      "avgKendallTau": 0.75,
+      "fallbackRate": 0,
+      "scenarios": 12,
+      "repeat": 1,
+      "partial": false,
+      "perScenario": [
+        {
+          "id": "S01",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S02",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S03",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": 0.3333333333333333
+        },
+        {
+          "id": "S04",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S05",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S06",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": 0.6666666666666666
+        },
+        {
+          "id": "S07",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": -1
+        },
+        {
+          "id": "S08",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S09",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S10",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S11",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S12",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        }
+      ]
+    },
+    {
+      "label": "GPT-4o",
+      "model": "gpt-4o-2024-11-20",
+      "provider": "openai",
+      "axis": "family",
+      "params": 0,
+      "sizeLabel": "undisclosed",
+      "top1Accuracy": 0.9167,
+      "avgKendallTau": 0.7778,
+      "fallbackRate": 0,
+      "scenarios": 12,
+      "repeat": 1,
+      "partial": false,
+      "perScenario": [
+        {
+          "id": "S01",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S02",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S03",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 0.3333333333333333
+        },
+        {
+          "id": "S04",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S05",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S06",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S07",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": -1
+        },
+        {
+          "id": "S08",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S09",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S10",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S11",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S12",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        }
+      ]
+    },
+    {
+      "label": "Llama-3.3-70B",
+      "model": "llama-3.3-70b",
+      "provider": "openai",
+      "axis": "family",
+      "params": 70,
+      "sizeLabel": "70B",
+      "top1Accuracy": 0.8333,
+      "avgKendallTau": 0.8788,
+      "fallbackRate": 0.0833,
+      "scenarios": 12,
+      "repeat": 1,
+      "partial": false,
+      "perScenario": [
+        {
+          "id": "S01",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S02",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S03",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": false,
+          "fallbackRuns": 0,
+          "tau": -0.3333333333333333
+        },
+        {
+          "id": "S04",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S05",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S06",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S07",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "",
+          "hit": false,
+          "fallbackRuns": 1,
+          "tau": null
+        },
+        {
+          "id": "S08",
+          "kind": "match-dominant",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S09",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S10",
+          "kind": "boundary",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S11",
+          "kind": "reputation-inversion",
+          "gtTop1": "0x0000000000000000000000000000000000000001",
+          "modelTop1": "0x0000000000000000000000000000000000000001",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        },
+        {
+          "id": "S12",
+          "kind": "multi-match-by-rep",
+          "gtTop1": "0x0000000000000000000000000000000000000002",
+          "modelTop1": "0x0000000000000000000000000000000000000002",
+          "hit": true,
+          "fallbackRuns": 0,
+          "tau": 1
+        }
+      ]
+    }
+  ]
+}

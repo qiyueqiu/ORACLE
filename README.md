@@ -1,5 +1,7 @@
 # ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution
 
+A project of [Center for AI Services Computing (AISC)](https://github.com/Center-for-AI-Services-Computing) at Shenzhen University. Lab-wide collaboration and contribution norms: see the [governance repository](https://github.com/Center-for-AI-Services-Computing/governance) (organization members only).
+
 [![CI](https://github.com/Center-for-AI-Services-Computing/ORACLE/actions/workflows/ci.yml/badge.svg)](https://github.com/Center-for-AI-Services-Computing/ORACLE/actions/workflows/ci.yml)
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.20-363636?logo=solidity)
 ![Hardhat](https://img.shields.io/badge/Hardhat-2.x-FFF100?logo=hardhat&logoColor=black)
@@ -261,3 +263,9 @@ REPEAT=3 MODEL_BUDGET_S=150 ./agents/node_modules/.bin/tsx experiments/e7-multi-
 ## 说明
 
 本仓库开源 ORACLE 的**系统实现**（合约、后端 Agent、前端、实验脚本与数据）。配套学术论文暂未公开，如有需要请联系作者。
+
+## 项目归属与协作规范
+
+本项目属于深圳大学智能服务计算研究中心(AISC)在 GitHub 组织 [Center-for-AI-Services-Computing](https://github.com/Center-for-AI-Services-Computing) 下的研究产出。仓库所有者已通过 PR 流程完成从个人账号 `qiyueqiu/ORACLE` 向组织的转移,代码所有权归组织所有,作者署名和贡献历史保留。
+
+实验室的协作规范、权限模型、开源流程、许可证选择等内容,见组织 [governance 仓库](https://github.com/Center-for-AI-Services-Computing/governance)(仅组织成员可见)。

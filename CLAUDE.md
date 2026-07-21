@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Context
+
+ORACLE is a research artifact of the **Center for AI Services Computing (AISC)** at Shenzhen University, hosted under the GitHub organization [Center-for-AI-Services-Computing](https://github.com/Center-for-AI-Services-Computing). The repo was transferred from `qiyueqiu/ORACLE` to the organization; ownership now belongs to AISC while contributor authorship and commit history are preserved.
+
+When working on this repo:
+- Follow the lab's lab-wide collaboration norms in the [governance repository](https://github.com/Center-for-AI-Services-Computing/governance) (org members only). Not all of them are restated here.
+- Use the security reporting channel documented in [SECURITY.md](SECURITY.md), not public issues.
+- Tag or release versions per the lab's SemVer conventions; cite the paper version when relevant.
+
 ## Project Overview
 
 ORACLE (On-chain Reputation & Audit for Coordinated LLM-Agent Execution) — a demo combining LLM-driven agent routing with on-chain trust and audit mechanisms. Three Solidity contracts provide DID identity, audit logging, and reputation scoring. A Node.js API server hosts Router/Worker agents that use SiliconFlow LLMs. A React frontend provides the UI.

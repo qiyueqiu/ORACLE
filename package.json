@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/qiyueqiu/ORACLE.git"
+    "url": "https://github.com/Center-for-AI-Services-Computing/ORACLE.git"
   },
   "scripts": {
     "compile": "hardhat compile",

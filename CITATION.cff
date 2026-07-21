@@ -10,7 +10,7 @@ authors:
   - given-names: Qiyue
     family-names: Qiu
     email: qiyueqiu777@qq.com
-repository-code: 'https://github.com/qiyueqiu/ORACLE'
+repository-code: 'https://github.com/Center-for-AI-Services-Computing/ORACLE'
 abstract: >-
   ORACLE binds LLM-driven agent dispatch to an on-chain
   trust and audit layer. A router agent's decision and a

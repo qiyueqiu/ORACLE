@@ -1,6 +1,6 @@
 # ORACLE — On-chain Reputation & Audit for Coordinated LLM-Agent Execution
 
-[![CI](https://github.com/qiyueqiu/ORACLE/actions/workflows/ci.yml/badge.svg)](https://github.com/qiyueqiu/ORACLE/actions/workflows/ci.yml)
+[![CI](https://github.com/Center-for-AI-Services-Computing/ORACLE/actions/workflows/ci.yml/badge.svg)](https://github.com/Center-for-AI-Services-Computing/ORACLE/actions/workflows/ci.yml)
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.20-363636?logo=solidity)
 ![Hardhat](https://img.shields.io/badge/Hardhat-2.x-FFF100?logo=hardhat&logoColor=black)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)

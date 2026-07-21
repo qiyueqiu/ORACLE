@@ -34,3 +34,16 @@ keywords:
   - non-repudiation
 license: MIT
 version: 1.0.0
+date-released: 2026-07-22
+# preferred-citation: 暂留空,论文已发表但 DOI/作者列表/会议名待补。
+# 后续用 v1.0.1 patch 发布时把下面占位字段取消注释并替换为真实值:
+#
+# preferred-citation:
+#   type: article              # 会议论文用 conference-paper
+#   title: "<论文标题>"
+#   authors:
+#     - family-names: "<姓>"
+#       given-names: "<名>"
+#   doi: "10.xxxx/xxxxxx"
+#   journal: "<期刊名>"        # 会议论文用 conference: "<会议名>"
+#   year: <年份>

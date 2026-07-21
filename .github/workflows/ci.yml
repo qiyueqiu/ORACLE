@@ -138,6 +138,9 @@ jobs:
           sleep 5
         env:
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY || 'test-key' }}
+          # 下面三个是 Hardhat node 的默认测试账号私钥(account[0/1/2]),
+          # 公开文档里有(Hardhat 启动即打印),仅用于本地 localhost 网络的 E2E 演示,
+          # 不对应任何真实资产。运行 fork 主网 E2E 时应改为从 secrets 注入。
           ROUTER_SIGNER_PRIVATE_KEY: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
           REPUTATION_SIGNER_PRIVATE_KEY: "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
           WORKER_DEMO_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"

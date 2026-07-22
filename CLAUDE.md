@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ORACLE is a research artifact of the **Center for AI Services Computing (AISC)** at Shenzhen University, hosted under the GitHub organization [Center-for-AI-Services-Computing](https://github.com/Center-for-AI-Services-Computing). The repo was transferred from `qiyueqiu/ORACLE` to the organization; ownership now belongs to AISC while contributor authorship and commit history are preserved.
 
 When working on this repo:
-- Follow the lab's lab-wide collaboration norms in the [governance repository](https://github.com/Center-for-AI-Services-Computing/governance) (org members only). Not all of them are restated here.
+- Follow the lab's lab-wide collaboration norms in the [lab-rules repository](https://github.com/Center-for-AI-Services-Computing/lab-rules) (org members only). Not all of them are restated here.
 - Use the security reporting channel documented in [SECURITY.md](SECURITY.md), not public issues.
 - Tag or release versions per the lab's SemVer conventions; cite the paper version when relevant.
 
